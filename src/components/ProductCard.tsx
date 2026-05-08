@@ -1,0 +1,69 @@
+import { Link } from "@tanstack/react-router";
+import { ShoppingBag, Star } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { useCart } from "@/contexts/CartContext";
+import { formatBRL } from "@/lib/format";
+import { toast } from "sonner";
+
+export type ProductCardProps = {
+  id: string;
+  slug: string;
+  name: string;
+  price: number;
+  sale_price: number | null;
+  image_url: string | null;
+  on_sale: boolean;
+  rating: number;
+};
+
+export function ProductCard(p: ProductCardProps) {
+  const { add } = useCart();
+  const finalPrice = p.on_sale && p.sale_price ? p.sale_price : p.price;
+
+  return (
+    <article className="group relative flex flex-col overflow-hidden rounded-2xl bg-card shadow-card transition-all hover:-translate-y-1 hover:shadow-elegant">
+      <Link to="/product/$slug" params={{ slug: p.slug }} className="relative block aspect-square overflow-hidden bg-muted">
+        {p.image_url && (
+          <img
+            src={p.image_url}
+            alt={p.name}
+            loading="lazy"
+            className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105"
+          />
+        )}
+        {p.on_sale && p.sale_price && (
+          <span className="absolute left-3 top-3 rounded-full bg-sale px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-sale-foreground">
+            Oferta
+          </span>
+        )}
+      </Link>
+      <div className="flex flex-1 flex-col gap-3 p-5">
+        <div className="flex items-center gap-1 text-xs text-muted-foreground">
+          <Star className="h-3.5 w-3.5 fill-accent text-accent" /> {p.rating.toFixed(1)}
+        </div>
+        <Link to="/product/$slug" params={{ slug: p.slug }} className="font-medium leading-snug hover:text-accent">
+          {p.name}
+        </Link>
+        <div className="mt-auto flex items-end justify-between gap-2">
+          <div>
+            {p.on_sale && p.sale_price && (
+              <div className="text-xs text-muted-foreground line-through">{formatBRL(p.price)}</div>
+            )}
+            <div className="text-lg font-semibold">{formatBRL(finalPrice)}</div>
+          </div>
+          <Button
+            size="icon"
+            variant="default"
+            onClick={() => {
+              add({ id: p.id, name: p.name, price: finalPrice, image_url: p.image_url, slug: p.slug });
+              toast.success("Adicionado ao carrinho");
+            }}
+            aria-label="Adicionar ao carrinho"
+          >
+            <ShoppingBag className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+    </article>
+  );
+}
