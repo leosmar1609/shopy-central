@@ -22,7 +22,7 @@ export function Navbar() {
         <nav className="hidden items-center gap-8 text-sm font-medium md:flex">
           <Link to="/" activeProps={{ className: "text-foreground" }} className="text-muted-foreground transition-colors hover:text-foreground" activeOptions={{ exact: true }}>Início</Link>
           <Link to="/shop" activeProps={{ className: "text-foreground" }} className="text-muted-foreground transition-colors hover:text-foreground">Loja</Link>
-          <Link to="/shop" search={{ sale: true } as never} className="text-muted-foreground transition-colors hover:text-foreground">Promoções</Link>
+          <Link to="/shop" className="text-muted-foreground transition-colors hover:text-foreground">Promoções</Link>
         </nav>
 
         <div className="flex items-center gap-1">
