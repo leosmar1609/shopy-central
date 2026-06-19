@@ -1,7 +1,8 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { z } from "zod";
-import { supabase } from "@/integrations/supabase/client";
+import { signupFn } from "@/fns/auth";
+import { storeToken } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -24,18 +25,16 @@ function Signup() {
     const parsed = schema.safeParse(Object.fromEntries(new FormData(e.currentTarget)));
     if (!parsed.success) return toast.error(parsed.error.issues[0].message);
     setLoading(true);
-    const { error } = await supabase.auth.signUp({
-      email: parsed.data.email,
-      password: parsed.data.password,
-      options: {
-        emailRedirectTo: `${window.location.origin}/`,
-        data: { full_name: parsed.data.full_name },
-      },
-    });
-    setLoading(false);
-    if (error) return toast.error(error.message);
-    toast.success("Conta criada com sucesso!");
-    navigate({ to: "/" });
+    try {
+      const { token } = await signupFn({ data: parsed.data });
+      storeToken(token);
+      toast.success("Conta criada com sucesso!");
+      navigate({ to: "/" });
+    } catch (err: any) {
+      toast.error(err.message ?? "Erro ao criar conta");
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (

@@ -2,7 +2,8 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { Search } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { fetchProductsFn } from "@/fns/products";
+import { fetchCategoriesFn } from "@/fns/categories";
 import { ProductCard } from "@/components/ProductCard";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -11,20 +12,16 @@ export const Route = createFileRoute("/shop")({ component: Shop });
 
 function Shop() {
   const [q, setQ] = useState("");
-  const [cat, setCat] = useState<string | null>(null);
+  const [cat, setCat] = useState<number | null>(null);
 
   const { data: products = [], isLoading } = useQuery({
     queryKey: ["products", "all"],
-    queryFn: async () => {
-      const { data, error } = await supabase.from("products").select("*").order("created_at", { ascending: false });
-      if (error) throw error;
-      return data ?? [];
-    },
+    queryFn: () => fetchProductsFn(),
   });
 
   const { data: categories = [] } = useQuery({
     queryKey: ["categories"],
-    queryFn: async () => (await supabase.from("categories").select("*")).data ?? [],
+    queryFn: () => fetchCategoriesFn(),
   });
 
   const filtered = useMemo(() => {

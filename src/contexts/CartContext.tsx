@@ -27,13 +27,13 @@ export function CartProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     try {
-      const raw = typeof window !== "undefined" ? localStorage.getItem(KEY) : null;
+      const raw = typeof window !== "undefined" ? sessionStorage.getItem(KEY) : null;
       if (raw) setItems(JSON.parse(raw));
     } catch {}
   }, []);
 
   useEffect(() => {
-    if (typeof window !== "undefined") localStorage.setItem(KEY, JSON.stringify(items));
+    if (typeof window !== "undefined") sessionStorage.setItem(KEY, JSON.stringify(items));
   }, [items]);
 
   const value = useMemo<Ctx>(() => ({

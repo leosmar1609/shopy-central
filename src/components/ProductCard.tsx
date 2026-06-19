@@ -12,20 +12,23 @@ export type ProductCardProps = {
   price: number;
   sale_price: number | null;
   image_url: string | null;
+  image_urls?: string[];
   on_sale: boolean;
-  rating: number;
+  rating: number | string | null | undefined;
 };
 
 export function ProductCard(p: ProductCardProps) {
   const { add } = useCart();
   const finalPrice = p.on_sale && p.sale_price ? p.sale_price : p.price;
+  const rating = Number(p.rating ?? 0) || 0;
+  const imageUrl = (Array.isArray(p.image_urls) && p.image_urls[0]) || p.image_url;
 
   return (
     <article className="group relative flex flex-col overflow-hidden rounded-2xl bg-card shadow-card transition-all hover:-translate-y-1 hover:shadow-elegant">
       <Link to="/product/$slug" params={{ slug: p.slug }} className="relative block aspect-square overflow-hidden bg-muted">
-        {p.image_url && (
+        {imageUrl && (
           <img
-            src={p.image_url}
+            src={imageUrl}
             alt={p.name}
             loading="lazy"
             className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105"
@@ -39,7 +42,7 @@ export function ProductCard(p: ProductCardProps) {
       </Link>
       <div className="flex flex-1 flex-col gap-3 p-5">
         <div className="flex items-center gap-1 text-xs text-muted-foreground">
-          <Star className="h-3.5 w-3.5 fill-accent text-accent" /> {p.rating.toFixed(1)}
+          <Star className="h-3.5 w-3.5 fill-accent text-accent" /> {rating.toFixed(1)}
         </div>
         <Link to="/product/$slug" params={{ slug: p.slug }} className="font-medium leading-snug hover:text-accent">
           {p.name}

@@ -1,7 +1,8 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { z } from "zod";
-import { supabase } from "@/integrations/supabase/client";
+import { loginFn } from "@/fns/auth";
+import { storeToken } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -23,11 +24,16 @@ function Login() {
     const parsed = schema.safeParse(Object.fromEntries(new FormData(e.currentTarget)));
     if (!parsed.success) return toast.error(parsed.error.issues[0].message);
     setLoading(true);
-    const { error } = await supabase.auth.signInWithPassword(parsed.data);
-    setLoading(false);
-    if (error) return toast.error(error.message);
-    toast.success("Bem-vindo de volta!");
-    navigate({ to: "/" });
+    try {
+      const { token } = await loginFn({ data: parsed.data });
+      storeToken(token);
+      toast.success("Bem-vindo de volta!");
+      navigate({ to: "/" });
+    } catch (err: any) {
+      toast.error(err.message ?? "Erro ao entrar");
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (

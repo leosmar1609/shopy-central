@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SignupRouteImport } from './routes/signup'
 import { Route as ShopRouteImport } from './routes/shop'
+import { Route as ProfileRouteImport } from './routes/profile'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as CheckoutRouteImport } from './routes/checkout'
 import { Route as CartRouteImport } from './routes/cart'
@@ -21,6 +22,7 @@ import { Route as ProductSlugRouteImport } from './routes/product.$slug'
 import { Route as AdminProductsRouteImport } from './routes/admin.products'
 import { Route as AdminOrdersRouteImport } from './routes/admin.orders'
 import { Route as AdminCategoriesRouteImport } from './routes/admin.categories'
+import { Route as ApiDbSelectRouteImport } from './routes/api/db/select'
 
 const SignupRoute = SignupRouteImport.update({
   id: '/signup',
@@ -30,6 +32,11 @@ const SignupRoute = SignupRouteImport.update({
 const ShopRoute = ShopRouteImport.update({
   id: '/shop',
   path: '/shop',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProfileRoute = ProfileRouteImport.update({
+  id: '/profile',
+  path: '/profile',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -82,6 +89,11 @@ const AdminCategoriesRoute = AdminCategoriesRouteImport.update({
   path: '/categories',
   getParentRoute: () => AdminRoute,
 } as any)
+const ApiDbSelectRoute = ApiDbSelectRouteImport.update({
+  id: '/api/db/select',
+  path: '/api/db/select',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -89,6 +101,7 @@ export interface FileRoutesByFullPath {
   '/cart': typeof CartRoute
   '/checkout': typeof CheckoutRoute
   '/login': typeof LoginRoute
+  '/profile': typeof ProfileRoute
   '/shop': typeof ShopRoute
   '/signup': typeof SignupRoute
   '/admin/categories': typeof AdminCategoriesRoute
@@ -96,12 +109,14 @@ export interface FileRoutesByFullPath {
   '/admin/products': typeof AdminProductsRoute
   '/product/$slug': typeof ProductSlugRoute
   '/admin/': typeof AdminIndexRoute
+  '/api/db/select': typeof ApiDbSelectRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/cart': typeof CartRoute
   '/checkout': typeof CheckoutRoute
   '/login': typeof LoginRoute
+  '/profile': typeof ProfileRoute
   '/shop': typeof ShopRoute
   '/signup': typeof SignupRoute
   '/admin/categories': typeof AdminCategoriesRoute
@@ -109,6 +124,7 @@ export interface FileRoutesByTo {
   '/admin/products': typeof AdminProductsRoute
   '/product/$slug': typeof ProductSlugRoute
   '/admin': typeof AdminIndexRoute
+  '/api/db/select': typeof ApiDbSelectRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -117,6 +133,7 @@ export interface FileRoutesById {
   '/cart': typeof CartRoute
   '/checkout': typeof CheckoutRoute
   '/login': typeof LoginRoute
+  '/profile': typeof ProfileRoute
   '/shop': typeof ShopRoute
   '/signup': typeof SignupRoute
   '/admin/categories': typeof AdminCategoriesRoute
@@ -124,6 +141,7 @@ export interface FileRoutesById {
   '/admin/products': typeof AdminProductsRoute
   '/product/$slug': typeof ProductSlugRoute
   '/admin/': typeof AdminIndexRoute
+  '/api/db/select': typeof ApiDbSelectRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -133,6 +151,7 @@ export interface FileRouteTypes {
     | '/cart'
     | '/checkout'
     | '/login'
+    | '/profile'
     | '/shop'
     | '/signup'
     | '/admin/categories'
@@ -140,12 +159,14 @@ export interface FileRouteTypes {
     | '/admin/products'
     | '/product/$slug'
     | '/admin/'
+    | '/api/db/select'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/cart'
     | '/checkout'
     | '/login'
+    | '/profile'
     | '/shop'
     | '/signup'
     | '/admin/categories'
@@ -153,6 +174,7 @@ export interface FileRouteTypes {
     | '/admin/products'
     | '/product/$slug'
     | '/admin'
+    | '/api/db/select'
   id:
     | '__root__'
     | '/'
@@ -160,6 +182,7 @@ export interface FileRouteTypes {
     | '/cart'
     | '/checkout'
     | '/login'
+    | '/profile'
     | '/shop'
     | '/signup'
     | '/admin/categories'
@@ -167,6 +190,7 @@ export interface FileRouteTypes {
     | '/admin/products'
     | '/product/$slug'
     | '/admin/'
+    | '/api/db/select'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -175,9 +199,11 @@ export interface RootRouteChildren {
   CartRoute: typeof CartRoute
   CheckoutRoute: typeof CheckoutRoute
   LoginRoute: typeof LoginRoute
+  ProfileRoute: typeof ProfileRoute
   ShopRoute: typeof ShopRoute
   SignupRoute: typeof SignupRoute
   ProductSlugRoute: typeof ProductSlugRoute
+  ApiDbSelectRoute: typeof ApiDbSelectRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -194,6 +220,13 @@ declare module '@tanstack/react-router' {
       path: '/shop'
       fullPath: '/shop'
       preLoaderRoute: typeof ShopRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/profile': {
+      id: '/profile'
+      path: '/profile'
+      fullPath: '/profile'
+      preLoaderRoute: typeof ProfileRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -266,6 +299,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminCategoriesRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/api/db/select': {
+      id: '/api/db/select'
+      path: '/api/db/select'
+      fullPath: '/api/db/select'
+      preLoaderRoute: typeof ApiDbSelectRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -291,10 +331,22 @@ const rootRouteChildren: RootRouteChildren = {
   CartRoute: CartRoute,
   CheckoutRoute: CheckoutRoute,
   LoginRoute: LoginRoute,
+  ProfileRoute: ProfileRoute,
   ShopRoute: ShopRoute,
   SignupRoute: SignupRoute,
   ProductSlugRoute: ProductSlugRoute,
+  ApiDbSelectRoute: ApiDbSelectRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}

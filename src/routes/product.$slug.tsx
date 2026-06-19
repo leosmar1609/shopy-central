@@ -1,11 +1,12 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
 import { Star, ShoppingBag, ChevronLeft, Truck, ShieldCheck } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { fetchProductBySlugFn } from "@/fns/products";
+import { fetchReviewsFn } from "@/fns/reviews";
 import { Button } from "@/components/ui/button";
 import { useCart } from "@/contexts/CartContext";
 import { formatBRL } from "@/lib/format";
-import { useState } from "react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/product/$slug")({ component: Product });
@@ -17,26 +18,41 @@ function Product() {
 
   const { data: product, isLoading } = useQuery({
     queryKey: ["product", slug],
-    queryFn: async () => {
-      const { data, error } = await supabase.from("products").select("*, categories(name)").eq("slug", slug).maybeSingle();
-      if (error) throw error;
-      return data;
-    },
+    queryFn: () => fetchProductBySlugFn({ data: { slug } }),
   });
+
+  const productImages = product
+    ? Array.from(
+        new Set([
+          product.image_url,
+          ...(Array.isArray(product.image_urls)
+            ? product.image_urls
+            : typeof product.image_urls === "string"
+            ? JSON.parse(product.image_urls)
+            : []),
+        ]
+          .filter(Boolean) as string[])
+      )
+    : [];
+
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+
+  useEffect(() => {
+    setSelectedImage(null);
+  }, [product?.id]);
+
+  const activeImage = selectedImage || productImages[0] || null;
 
   const { data: reviews = [] } = useQuery({
     queryKey: ["reviews", product?.id],
     enabled: !!product?.id,
-    queryFn: async () => {
-      const { data } = await supabase.from("reviews").select("*").eq("product_id", product!.id).order("created_at", { ascending: false });
-      return data ?? [];
-    },
+    queryFn: () => fetchReviewsFn({ data: { productId: product!.id } }),
   });
 
   if (isLoading) return <div className="container-page py-20 text-center text-muted-foreground">Carregando...</div>;
   if (!product) return <div className="container-page py-20 text-center">Produto não encontrado</div>;
 
-  const finalPrice = product.on_sale && product.sale_price ? product.sale_price : product.price;
+  const finalPrice = product.on_sale && product.sale_price ? Number(product.sale_price) : Number(product.price);
 
   return (
     <div className="container-page py-10">
@@ -47,26 +63,36 @@ function Product() {
       <div className="grid gap-12 lg:grid-cols-2">
         <div className="space-y-4">
           <div className="aspect-square overflow-hidden rounded-3xl bg-muted shadow-card">
-            {product.image_url && <img src={product.image_url} alt={product.name} className="h-full w-full object-cover" />}
+            {activeImage ? (
+              <img src={activeImage} alt={product.name} className="h-full w-full object-cover" />
+            ) : (
+              <div className="flex h-full items-center justify-center text-muted-foreground">Sem imagem</div>
+            )}
           </div>
-          <div className="grid grid-cols-4 gap-3">
-            {[product.image_url, product.image_url, product.image_url, product.image_url].map((src, i) => (
-              <div key={i} className="aspect-square overflow-hidden rounded-xl bg-muted">
-                {src && <img src={src} alt="" className="h-full w-full object-cover opacity-80" />}
-              </div>
-            ))}
-          </div>
+          {productImages.length > 1 && (
+            <div className="grid grid-cols-4 gap-3">
+              {productImages.map((src, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => setSelectedImage(src)}
+                  className={`aspect-square overflow-hidden rounded-xl border transition ${src === activeImage ? "border-accent" : "border-transparent"}`}>
+                  <img src={src} alt={`${product.name} ${i + 1}`} className="h-full w-full object-cover opacity-80" />
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="space-y-6">
           <div>
             {product.categories && (
-              <div className="text-xs font-medium uppercase tracking-widest text-accent">{(product.categories as any).name}</div>
+              <div className="text-xs font-medium uppercase tracking-widest text-accent">{product.categories.name}</div>
             )}
             <h1 className="mt-2 font-display text-4xl md:text-5xl">{product.name}</h1>
             <div className="mt-3 flex items-center gap-2 text-sm">
               <div className="flex items-center gap-1">
-                <Star className="h-4 w-4 fill-accent text-accent" /> {product.rating.toFixed(1)}
+                <Star className="h-4 w-4 fill-accent text-accent" /> {Number(product.rating ?? 0).toFixed(1)}
               </div>
               <span className="text-muted-foreground">({reviews.length} avaliações)</span>
             </div>
@@ -75,7 +101,7 @@ function Product() {
           <div className="flex items-end gap-3">
             <div className="text-4xl font-semibold">{formatBRL(finalPrice)}</div>
             {product.on_sale && product.sale_price && (
-              <div className="text-lg text-muted-foreground line-through">{formatBRL(product.price)}</div>
+              <div className="text-lg text-muted-foreground line-through">{formatBRL(Number(product.price))}</div>
             )}
           </div>
 

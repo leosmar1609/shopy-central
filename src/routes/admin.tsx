@@ -1,18 +1,9 @@
-import { createFileRoute, Outlet, Link, redirect, useRouterState } from "@tanstack/react-router";
+import { createFileRoute, Outlet, Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { LayoutDashboard, Package, Tag, ShoppingCart, ArrowLeft } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
 
-export const Route = createFileRoute("/admin")({
-  component: AdminLayout,
-  beforeLoad: async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) throw redirect({ to: "/login" });
-    const { data: role } = await supabase
-      .from("user_roles").select("role").eq("user_id", user.id).eq("role", "admin").maybeSingle();
-    if (!role) throw redirect({ to: "/" });
-  },
-});
+export const Route = createFileRoute("/admin")({ component: AdminLayout });
 
 const items = [
   { to: "/admin", label: "Dashboard", icon: LayoutDashboard, exact: true },
@@ -22,9 +13,21 @@ const items = [
 ];
 
 function AdminLayout() {
+  const { user, isAdmin, loading } = useAuth();
+  const navigate = useNavigate();
   const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
   const path = useRouterState({ select: (s) => s.location.pathname });
+
+  useEffect(() => setMounted(true), []);
+
+  useEffect(() => {
+    if (!loading) {
+      if (!user) navigate({ to: "/login" });
+      else if (!isAdmin) navigate({ to: "/" });
+    }
+  }, [user, isAdmin, loading, navigate]);
+
+  if (loading || !isAdmin) return null;
 
   return (
     <div className="flex min-h-screen bg-secondary/30">

@@ -1,7 +1,8 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowRight, Truck, ShieldCheck, RefreshCw, Sparkles } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { fetchFeaturedProductsFn, fetchSaleProductsFn } from "@/fns/products";
+import { fetchCategoriesFn } from "@/fns/categories";
 import { ProductCard } from "@/components/ProductCard";
 import { Button } from "@/components/ui/button";
 
@@ -10,29 +11,17 @@ export const Route = createFileRoute("/")({ component: Home });
 function Home() {
   const { data: featured = [] } = useQuery({
     queryKey: ["products", "featured"],
-    queryFn: async () => {
-      const { data, error } = await supabase.from("products").select("*").eq("featured", true).limit(8);
-      if (error) throw error;
-      return data ?? [];
-    },
+    queryFn: () => fetchFeaturedProductsFn(),
   });
 
   const { data: categories = [] } = useQuery({
     queryKey: ["categories"],
-    queryFn: async () => {
-      const { data, error } = await supabase.from("categories").select("*");
-      if (error) throw error;
-      return data ?? [];
-    },
+    queryFn: () => fetchCategoriesFn(),
   });
 
   const { data: sale = [] } = useQuery({
     queryKey: ["products", "sale"],
-    queryFn: async () => {
-      const { data, error } = await supabase.from("products").select("*").eq("on_sale", true).limit(4);
-      if (error) throw error;
-      return data ?? [];
-    },
+    queryFn: () => fetchSaleProductsFn(),
   });
 
   return (
@@ -61,7 +50,7 @@ function Home() {
           </div>
           <div className="relative aspect-[4/5] overflow-hidden rounded-3xl shadow-elegant md:aspect-square">
             <img
-              src="https://images.unsplash.com/photo-1483985988355-763728e1935b?w=1200&q=80"
+              src="https://www.ellymodasonline.com.br/arquivos/PRODUTOS/7511713811406625171/7511713811406625171_G_1.jpg"
               alt="Coleção em destaque"
               className="h-full w-full object-cover"
             />

@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { fetchAdminOrdersFn, updateOrderStatusFn } from "@/fns/orders";
+import { getStoredToken } from "@/lib/auth-client";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { formatBRL } from "@/lib/format";
 import { toast } from "sonner";
@@ -11,16 +12,21 @@ const STATUSES = ["pending", "paid", "shipped", "delivered", "cancelled"];
 
 function AdminOrders() {
   const qc = useQueryClient();
+  const token = () => getStoredToken() ?? "";
+
   const { data: orders = [] } = useQuery({
     queryKey: ["admin", "orders"],
-    queryFn: async () => (await supabase.from("orders").select("*, order_items(*)").order("created_at", { ascending: false })).data ?? [],
+    queryFn: () => fetchAdminOrdersFn({ data: { token: token() } }),
   });
 
-  async function setStatus(id: string, status: string) {
-    const { error } = await supabase.from("orders").update({ status }).eq("id", id);
-    if (error) return toast.error(error.message);
-    toast.success("Atualizado");
-    qc.invalidateQueries({ queryKey: ["admin", "orders"] });
+  async function setStatus(id: number, status: string) {
+    try {
+      await updateOrderStatusFn({ data: { token: token(), id, status } });
+      toast.success("Atualizado");
+      qc.invalidateQueries({ queryKey: ["admin", "orders"] });
+    } catch (err: any) {
+      toast.error(err.message ?? "Erro ao atualizar");
+    }
   }
 
   return (
@@ -34,7 +40,7 @@ function AdminOrders() {
             <div key={o.id} className="rounded-2xl bg-card p-5 shadow-card">
               <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <div className="font-medium">#{o.id.slice(0, 8)} · {o.shipping_name}</div>
+                  <div className="font-medium">#{String(o.id).slice(0, 8)} · {o.shipping_name}</div>
                   <div className="text-xs text-muted-foreground">{new Date(o.created_at).toLocaleString("pt-BR")}</div>
                 </div>
                 <div className="flex items-center gap-3">

@@ -2,7 +2,9 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Plus, Edit2, Trash2 } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { fetchAdminProductsFn, createProductFn, updateProductFn, deleteProductFn } from "@/fns/products";
+import { fetchCategoriesFn } from "@/fns/categories";
+import { getStoredToken } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,22 +17,31 @@ import { toast } from "sonner";
 export const Route = createFileRoute("/admin/products")({ component: AdminProducts });
 
 function slugify(s: string) {
-  return s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  return s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+}
+
+function parseImageUrls(value: string | null) {
+  if (!value) return [];
+  return String(value)
+    .split(/\r?\n|,/) 
+    .map((url) => url.trim())
+    .filter(Boolean);
 }
 
 function AdminProducts() {
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<any>(null);
+  const token = () => getStoredToken() ?? "";
 
   const { data: products = [] } = useQuery({
     queryKey: ["admin", "products"],
-    queryFn: async () => (await supabase.from("products").select("*, categories(name)").order("created_at", { ascending: false })).data ?? [],
+    queryFn: () => fetchAdminProductsFn({ data: { token: token() } }),
   });
 
   const { data: cats = [] } = useQuery({
     queryKey: ["categories"],
-    queryFn: async () => (await supabase.from("categories").select("*")).data ?? [],
+    queryFn: () => fetchCategoriesFn(),
   });
 
   async function save(e: React.FormEvent<HTMLFormElement>) {
@@ -44,27 +55,36 @@ function AdminProducts() {
       sale_price: fd.get("sale_price") ? Number(fd.get("sale_price")) : null,
       stock: Number(fd.get("stock")),
       image_url: String(fd.get("image_url")),
+      image_urls: parseImageUrls(fd.get("image_urls") as string | null),
       category_id: String(fd.get("category_id")) || null,
       featured: fd.get("featured") === "on",
       on_sale: fd.get("on_sale") === "on",
     };
-    const { error } = editing
-      ? await supabase.from("products").update(payload).eq("id", editing.id)
-      : await supabase.from("products").insert(payload);
-    if (error) return toast.error(error.message);
-    toast.success("Salvo!");
-    qc.invalidateQueries({ queryKey: ["admin", "products"] });
-    qc.invalidateQueries({ queryKey: ["products"] });
-    setOpen(false);
-    setEditing(null);
+    try {
+      if (editing) {
+        await updateProductFn({ data: { token: token(), id: editing.id, payload } });
+      } else {
+        await createProductFn({ data: { token: token(), payload } });
+      }
+      toast.success("Salvo!");
+      qc.invalidateQueries({ queryKey: ["admin", "products"] });
+      qc.invalidateQueries({ queryKey: ["products"] });
+      setOpen(false);
+      setEditing(null);
+    } catch (err: any) {
+      toast.error(err.message ?? "Erro ao salvar");
+    }
   }
 
-  async function del(id: string) {
+  async function del(id: number) {
     if (!confirm("Excluir produto?")) return;
-    const { error } = await supabase.from("products").delete().eq("id", id);
-    if (error) return toast.error(error.message);
-    toast.success("Excluído");
-    qc.invalidateQueries({ queryKey: ["admin", "products"] });
+    try {
+      await deleteProductFn({ data: { token: token(), id } });
+      toast.success("Excluído");
+      qc.invalidateQueries({ queryKey: ["admin", "products"] });
+    } catch (err: any) {
+      toast.error(err.message ?? "Erro ao excluir");
+    }
   }
 
   return (
@@ -85,12 +105,21 @@ function AdminProducts() {
               <div><Label>Estoque</Label><Input name="stock" type="number" defaultValue={editing?.stock ?? 0} required /></div>
               <div>
                 <Label>Categoria</Label>
-                <Select name="category_id" defaultValue={editing?.category_id ?? undefined}>
+                <Select name="category_id" defaultValue={editing?.category_id ? String(editing.category_id) : undefined}>
                   <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
-                  <SelectContent>{cats.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent>
+                  <SelectContent>{cats.map((c) => <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
               <div className="sm:col-span-2"><Label>URL da imagem</Label><Input name="image_url" defaultValue={editing?.image_url} /></div>
+              <div className="sm:col-span-2">
+                <Label>URLs adicionais de imagens</Label>
+                <Textarea
+                  name="image_urls"
+                  defaultValue={Array.isArray(editing?.image_urls) ? editing.image_urls.join("\n") : ""}
+                  placeholder="Cole uma URL por linha"
+                />
+                <p className="text-xs text-muted-foreground">A primeira imagem continua sendo a principal. Use uma URL por linha para imagens extras.</p>
+              </div>
               <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="featured" defaultChecked={editing?.featured} /> Em destaque</label>
               <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="on_sale" defaultChecked={editing?.on_sale} /> Em promoção</label>
               <Button type="submit" className="sm:col-span-2">Salvar</Button>
@@ -113,7 +142,7 @@ function AdminProducts() {
                     <span>{p.name}</span>
                   </div>
                 </td>
-                <td className="p-3 text-muted-foreground">{(p.categories as any)?.name ?? "—"}</td>
+                <td className="p-3 text-muted-foreground">{p.categories?.name ?? "—"}</td>
                 <td className="p-3">{formatBRL(Number(p.price))}</td>
                 <td className="p-3">{p.stock}</td>
                 <td className="p-3 text-right">

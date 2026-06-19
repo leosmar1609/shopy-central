@@ -1,29 +1,18 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { Package, ShoppingCart, Users, TrendingUp } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { fetchStatsFn } from "@/fns/stats";
+import { getStoredToken } from "@/lib/auth-client";
 import { formatBRL } from "@/lib/format";
 
 export const Route = createFileRoute("/admin/")({ component: Dashboard });
 
 function Dashboard() {
+  const token = getStoredToken() ?? "";
+
   const { data: stats } = useQuery({
     queryKey: ["admin", "stats"],
-    queryFn: async () => {
-      const [products, orders, items] = await Promise.all([
-        supabase.from("products").select("id", { count: "exact", head: true }),
-        supabase.from("orders").select("total, status, created_at"),
-        supabase.from("order_items").select("id", { count: "exact", head: true }),
-      ]);
-      const ordersData = orders.data ?? [];
-      const revenue = ordersData.reduce((s, o) => s + Number(o.total), 0);
-      return {
-        products: products.count ?? 0,
-        orders: ordersData.length,
-        items: items.count ?? 0,
-        revenue,
-      };
-    },
+    queryFn: () => fetchStatsFn({ data: { token } }),
   });
 
   const cards = [

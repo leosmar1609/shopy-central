@@ -8,7 +8,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 
 export function Navbar() {
-  const { count } = useCart();
+  const { count, clear } = useCart();
   const { user, isAdmin, signOut } = useAuth();
 
   return (
@@ -38,12 +38,18 @@ export function Navbar() {
               <DropdownMenuContent align="end" className="w-56">
                 <div className="px-2 py-1.5 text-xs text-muted-foreground truncate">{user.email}</div>
                 <DropdownMenuSeparator />
+                <DropdownMenuItem asChild>
+                  <Link to="/profile" className="flex items-center gap-2"><User className="h-4 w-4" /> Perfil</Link>
+                </DropdownMenuItem>
                 {isAdmin && (
                   <DropdownMenuItem asChild>
                     <Link to="/admin" className="flex items-center gap-2"><LayoutDashboard className="h-4 w-4" /> Painel Admin</Link>
                   </DropdownMenuItem>
                 )}
-                <DropdownMenuItem onClick={() => signOut()}>
+                <DropdownMenuItem onClick={() => {
+                  clear();
+                  signOut();
+                }}>
                   <LogOut className="h-4 w-4 mr-2" /> Sair
                 </DropdownMenuItem>
               </DropdownMenuContent>

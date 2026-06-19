@@ -1,7 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, Trash2 } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { fetchCategoriesFn, createCategoryFn, deleteCategoryFn } from "@/fns/categories";
+import { getStoredToken } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,37 +13,43 @@ import { toast } from "sonner";
 export const Route = createFileRoute("/admin/categories")({ component: AdminCategories });
 
 function slugify(s: string) {
-  return s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  return s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 }
 
 function AdminCategories() {
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
+  const token = () => getStoredToken() ?? "";
 
   const { data: cats = [] } = useQuery({
     queryKey: ["admin", "categories"],
-    queryFn: async () => (await supabase.from("categories").select("*").order("name")).data ?? [],
+    queryFn: () => fetchCategoriesFn(),
   });
 
   async function add(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
     const name = String(fd.get("name"));
-    const { error } = await supabase.from("categories").insert({
-      name, slug: slugify(name), image_url: String(fd.get("image_url")),
-    });
-    if (error) return toast.error(error.message);
-    toast.success("Criada");
-    qc.invalidateQueries({ queryKey: ["admin", "categories"] });
-    qc.invalidateQueries({ queryKey: ["categories"] });
-    setOpen(false);
+    try {
+      await createCategoryFn({ data: { token: token(), name, slug: slugify(name), image_url: String(fd.get("image_url")) } });
+      toast.success("Criada");
+      qc.invalidateQueries({ queryKey: ["admin", "categories"] });
+      qc.invalidateQueries({ queryKey: ["categories"] });
+      setOpen(false);
+    } catch (err: any) {
+      toast.error(err.message ?? "Erro ao criar");
+    }
   }
 
-  async function del(id: string) {
+  async function del(id: number) {
     if (!confirm("Excluir?")) return;
-    const { error } = await supabase.from("categories").delete().eq("id", id);
-    if (error) return toast.error(error.message);
-    qc.invalidateQueries({ queryKey: ["admin", "categories"] });
+    try {
+      await deleteCategoryFn({ data: { token: token(), id } });
+      toast.success("Excluída");
+      qc.invalidateQueries({ queryKey: ["admin", "categories"] });
+    } catch (err: any) {
+      toast.error(err.message ?? "Erro ao excluir");
+    }
   }
 
   return (
