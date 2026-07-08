@@ -1,7 +1,8 @@
 import { Link } from "@tanstack/react-router";
-import { ShoppingBag, Star } from "lucide-react";
+import { Heart, ShoppingBag, Star } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useCart } from "@/contexts/CartContext";
+import { useWishlist } from "@/contexts/WishlistContext";
 import { formatBRL } from "@/lib/format";
 import { toast } from "sonner";
 
@@ -19,9 +20,11 @@ export type ProductCardProps = {
 
 export function ProductCard(p: ProductCardProps) {
   const { add } = useCart();
+  const { has, toggle } = useWishlist();
   const finalPrice = p.on_sale && p.sale_price ? p.sale_price : p.price;
   const rating = Number(p.rating ?? 0) || 0;
   const imageUrl = (Array.isArray(p.image_urls) && p.image_urls[0]) || p.image_url;
+  const isFavorite = has(p.id);
 
   return (
     <article className="group relative flex flex-col overflow-hidden rounded-2xl bg-card shadow-card transition-all hover:-translate-y-1 hover:shadow-elegant">
@@ -39,6 +42,18 @@ export function ProductCard(p: ProductCardProps) {
             Oferta
           </span>
         )}
+        <button
+          type="button"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            toggle({ id: p.id, name: p.name, price: finalPrice, image_url: p.image_url, slug: p.slug });
+          }}
+          aria-label={isFavorite ? "Remover dos favoritos" : "Adicionar aos favoritos"}
+          className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-full bg-background/70 text-foreground backdrop-blur transition hover:bg-background"
+        >
+          <Heart className={`h-4 w-4 ${isFavorite ? "fill-accent text-accent" : ""}`} />
+        </button>
       </Link>
       <div className="flex flex-1 flex-col gap-3 p-5">
         <div className="flex items-center gap-1 text-xs text-muted-foreground">

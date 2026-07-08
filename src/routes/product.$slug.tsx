@@ -1,11 +1,22 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
-import { Star, ShoppingBag, ChevronLeft, Truck, ShieldCheck } from "lucide-react";
-import { fetchProductBySlugFn } from "@/fns/products";
+import { useEffect, useRef, useState } from "react";
+import {
+  Star,
+  ShoppingBag,
+  ChevronLeft,
+  ChevronRight,
+  Truck,
+  ShieldCheck,
+  Heart,
+  Share2,
+} from "lucide-react";
+import { fetchProductBySlugFn, fetchProductsFn } from "@/fns/products";
 import { fetchReviewsFn } from "@/fns/reviews";
 import { Button } from "@/components/ui/button";
+import { ProductCard } from "@/components/ProductCard";
 import { useCart } from "@/contexts/CartContext";
+import { useWishlist } from "@/contexts/WishlistContext";
 import { formatBRL } from "@/lib/format";
 import { toast } from "sonner";
 
@@ -14,12 +25,50 @@ export const Route = createFileRoute("/product/$slug")({ component: Product });
 function Product() {
   const { slug } = Route.useParams();
   const { add } = useCart();
+  const { has, toggle } = useWishlist();
   const [qty, setQty] = useState(1);
 
   const { data: product, isLoading } = useQuery({
     queryKey: ["product", slug],
     queryFn: () => fetchProductBySlugFn({ data: { slug } }),
   });
+
+  const { data: allProducts = [] } = useQuery({
+    queryKey: ["products", "all"],
+    queryFn: () => fetchProductsFn(),
+    enabled: !!product,
+  });
+
+  const relatedProducts = product
+    ? allProducts
+        .filter((p) => p.id !== product.id && p.category_id === product.category_id)
+        .slice(0, 4)
+    : [];
+
+  const [zoomActive, setZoomActive] = useState(false);
+  const [zoomPos, setZoomPos] = useState({ x: 50, y: 50 });
+  const imageRef = useRef<HTMLDivElement>(null);
+
+  const handleImageMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    const rect = imageRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const x = ((e.clientX - rect.left) / rect.width) * 100;
+    const y = ((e.clientY - rect.top) / rect.height) * 100;
+    setZoomPos({ x, y });
+  };
+
+  const handleShare = () => {
+    if (!product) return;
+    const url = window.location.href;
+    if (navigator.share) {
+      navigator.share({ title: product.name, text: product.name, url }).catch(() => {});
+    } else {
+      navigator.clipboard
+        .writeText(url)
+        .then(() => toast.success("Link copiado!"))
+        .catch(() => {});
+    }
+  };
 
   const productImages = product
     ? Array.from(
@@ -60,11 +109,43 @@ function Product() {
         <ChevronLeft className="h-4 w-4" /> Voltar à loja
       </Link>
 
+      <nav aria-label="Breadcrumb" className="mb-6 flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
+        <Link to="/" className="hover:text-foreground">Início</Link>
+        <ChevronRight className="h-3.5 w-3.5" />
+        <Link to="/shop" className="hover:text-foreground">Loja</Link>
+        {product.categories && (
+          <>
+            <ChevronRight className="h-3.5 w-3.5" />
+            <span className="hover:text-foreground">{product.categories.name}</span>
+          </>
+        )}
+        <ChevronRight className="h-3.5 w-3.5" />
+        <span className="text-foreground">{product.name}</span>
+      </nav>
+
       <div className="grid gap-12 lg:grid-cols-2">
         <div className="space-y-4">
-          <div className="aspect-square overflow-hidden rounded-3xl bg-muted shadow-card">
+          <div
+            ref={imageRef}
+            onMouseEnter={() => setZoomActive(true)}
+            onMouseLeave={() => setZoomActive(false)}
+            onMouseMove={handleImageMouseMove}
+            className="relative aspect-square cursor-zoom-in overflow-hidden rounded-3xl bg-muted shadow-card"
+          >
             {activeImage ? (
-              <img src={activeImage} alt={product.name} className="h-full w-full object-cover" />
+              <>
+                <img src={activeImage} alt={product.name} className="h-full w-full object-cover" />
+                {zoomActive && (
+                  <div
+                    className="pointer-events-none absolute inset-0 hidden bg-no-repeat md:block"
+                    style={{
+                      backgroundImage: `url(${activeImage})`,
+                      backgroundSize: "200%",
+                      backgroundPosition: `${zoomPos.x}% ${zoomPos.y}%`,
+                    }}
+                  />
+                )}
+              </>
             ) : (
               <div className="flex h-full items-center justify-center text-muted-foreground">Sem imagem</div>
             )}
@@ -115,11 +196,28 @@ function Product() {
             )}
           </div>
 
+          {/* No `sku` column exists on `products` — derived a stable display code from the numeric id instead of fabricating one. */}
+          <div className="text-xs text-muted-foreground">
+            SKU: SKU-{String(product.id).padStart(6, "0")}
+          </div>
+
           <div className="flex items-center gap-3">
             <div className="flex items-center rounded-full border border-input">
-              <button onClick={() => setQty(Math.max(1, qty - 1))} className="px-4 py-2 text-lg">−</button>
+              <button
+                onClick={() => setQty(Math.max(1, qty - 1))}
+                aria-label="Diminuir quantidade"
+                className="px-4 py-2 text-lg"
+              >
+                −
+              </button>
               <span className="w-10 text-center">{qty}</span>
-              <button onClick={() => setQty(qty + 1)} className="px-4 py-2 text-lg">+</button>
+              <button
+                onClick={() => setQty(qty + 1)}
+                aria-label="Aumentar quantidade"
+                className="px-4 py-2 text-lg"
+              >
+                +
+              </button>
             </div>
             <Button
               size="lg"
@@ -132,6 +230,24 @@ function Product() {
             >
               <ShoppingBag className="mr-2 h-4 w-4" /> Adicionar ao carrinho
             </Button>
+            <button
+              type="button"
+              onClick={() =>
+                toggle({ id: product.id, name: product.name, price: finalPrice, image_url: product.image_url, slug: product.slug })
+              }
+              aria-label={has(product.id) ? "Remover dos favoritos" : "Adicionar aos favoritos"}
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-input transition hover:bg-secondary"
+            >
+              <Heart className={`h-4 w-4 ${has(product.id) ? "fill-accent text-accent" : ""}`} />
+            </button>
+            <button
+              type="button"
+              onClick={handleShare}
+              aria-label="Compartilhar produto"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-input transition hover:bg-secondary"
+            >
+              <Share2 className="h-4 w-4" />
+            </button>
           </div>
 
           <div className="grid grid-cols-2 gap-3 rounded-2xl bg-secondary/50 p-4 text-sm">
@@ -158,6 +274,17 @@ function Product() {
           </ul>
         )}
       </section>
+
+      {relatedProducts.length > 0 && (
+        <section className="mt-20">
+          <h2 className="mb-6 font-display text-2xl">Produtos relacionados</h2>
+          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+            {relatedProducts.map((p) => (
+              <ProductCard key={p.id} {...p} />
+            ))}
+          </div>
+        </section>
+      )}
     </div>
   );
 }

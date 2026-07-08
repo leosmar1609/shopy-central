@@ -1,16 +1,19 @@
 import { createServerFn } from '@tanstack/react-start';
+import { getRequestIP } from '@tanstack/react-start/server';
 import crypto from 'crypto';
 import https from 'node:https';
 import { db } from '@/lib/db';
 import { verifyToken } from '@/lib/jwt';
 
-function getMpAccessToken(): string {
-  const token = process.env.MP_ACCESS_TOKEN;
-  if (!token || (!token.startsWith('APP_USR-') && !token.startsWith('TEST-'))) {
-    throw new Error('MP_ACCESS_TOKEN inválido ou não configurado.');
+function getAsaasConfig(): { apiKey: string; baseUrl: string } {
+  const apiKey = process.env.ASAAS_API_KEY;
+  if (!apiKey) {
+    throw new Error('ASAAS_API_KEY inválido ou não configurado.');
   }
-  return token;
+  const baseUrl = process.env.ASAAS_BASE_URL || 'https://sandbox.asaas.com/api/v3';
+  return { apiKey, baseUrl };
 }
+
 type OrderPayload = {
   subtotal: number;
   shipping: number;
@@ -21,6 +24,11 @@ type OrderPayload = {
   shipping_city: string;
   shipping_zip: string;
   shipping_country: string;
+  shipping_neighborhood?: string;
+  shipping_state?: string;
+  shipping_complement?: string;
+  coupon_code?: string;
+  discount?: number;
 };
 
 type PaymentItem = {
@@ -31,20 +39,27 @@ type PaymentItem = {
   quantity: number;
 };
 
-function mpPost<T>(path: string, body: object, accessToken: string): Promise<T> {
+function asaasRequest<T>(
+  method: 'GET' | 'POST',
+  path: string,
+  apiKey: string,
+  baseUrl: string,
+  body?: object,
+): Promise<T> {
   return new Promise((resolve, reject) => {
-    const payload = Buffer.from(JSON.stringify(body), 'utf-8');
+    const url = new URL(baseUrl + path);
+    const payload = body ? Buffer.from(JSON.stringify(body), 'utf-8') : undefined;
     const req = https.request(
       {
-        hostname: 'api.mercadopago.com',
-        path,
-        method: 'POST',
+        hostname: url.hostname,
+        path: url.pathname + url.search,
+        method,
         rejectUnauthorized: false,
         headers: {
           'Content-Type': 'application/json',
-          'Content-Length': payload.byteLength,
-          Authorization: `Bearer ${accessToken}`,
-          'X-Idempotency-Key': crypto.randomUUID(),
+          ...(payload ? { 'Content-Length': payload.byteLength } : {}),
+          access_token: apiKey,
+          'User-Agent': 'shopy-central-integration',
         },
       },
       (res) => {
@@ -60,32 +75,64 @@ function mpPost<T>(path: string, body: object, accessToken: string): Promise<T> 
           }
           const status = res.statusCode ?? 0;
           if (status >= 400) {
-            console.error('[MP API Error] status:', status, 'body:', text);
-            const base = (parsed?.message as string | undefined) ?? `Mercado Pago erro HTTP ${status}`;
-            const causes = Array.isArray(parsed?.cause)
-              ? (parsed.cause as any[]).map((c) => `${c.code ?? ''} ${c.description ?? ''}`.trim()).filter(Boolean).join(' | ')
-              : (parsed?.cause?.description as string | undefined) ?? '';
-            reject(new Error(causes ? `${base}: ${causes}` : base));
+            console.error('[Asaas API Error] status:', status, 'body:', text);
+            const errors = Array.isArray(parsed?.errors)
+              ? (parsed.errors as any[]).map((e) => e.description).filter(Boolean).join(' | ')
+              : '';
+            reject(new Error(errors || `Asaas erro HTTP ${status}`));
           } else {
             resolve(parsed as T);
           }
         });
       },
     );
-    req.on('error', (err: Error) =>
-      reject(new Error(`Falha ao conectar com o Mercado Pago: ${err.message}`)),
-    );
-    req.write(payload);
+    req.on('error', (err: Error) => reject(new Error(`Falha ao conectar com o Asaas: ${err.message}`)));
+    if (payload) req.write(payload);
     req.end();
   });
 }
 
+function formatDueDate(daysAhead: number): string {
+  const date = new Date();
+  date.setDate(date.getDate() + daysAhead);
+  return date.toISOString().slice(0, 10);
+}
 
-function formatPayerName(fullName?: string): { name: string; surname: string } {
-  const full = String(fullName ?? '').trim();
-  if (!full) return { name: 'Cliente', surname: '' };
-  const [name, ...rest] = full.split(/\s+/);
-  return { name, surname: rest.join(' ') || name };
+async function findOrCreateAsaasCustomer(
+  apiKey: string,
+  baseUrl: string,
+  params: {
+    name: string;
+    cpfCnpj: string;
+    email?: string;
+    phone?: string;
+    postalCode?: string;
+    address?: string;
+    addressNumber?: string;
+  },
+): Promise<string> {
+  const cpfCnpj = params.cpfCnpj.replace(/\D/g, '');
+
+  type CustomerListResponse = { data: Array<{ id: string }> };
+  const existing = await asaasRequest<CustomerListResponse>(
+    'GET',
+    `/customers?cpfCnpj=${cpfCnpj}`,
+    apiKey,
+    baseUrl,
+  );
+  if (existing.data?.length) return existing.data[0].id;
+
+  type CustomerResponse = { id: string };
+  const created = await asaasRequest<CustomerResponse>('POST', '/customers', apiKey, baseUrl, {
+    name: params.name,
+    cpfCnpj,
+    email: params.email,
+    phone: params.phone,
+    postalCode: params.postalCode,
+    address: params.address,
+    addressNumber: params.addressNumber,
+  });
+  return created.id;
 }
 
 async function insertOrder(
@@ -95,7 +142,11 @@ async function insertOrder(
 ): Promise<string> {
   const id = crypto.randomUUID();
   await conn.execute(
-    'INSERT INTO orders (id, user_id, status, subtotal, shipping, total, payment_method, shipping_name, shipping_address, shipping_city, shipping_zip, shipping_country) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    `INSERT INTO orders
+      (id, user_id, status, subtotal, shipping, total, payment_method, shipping_name, shipping_address,
+       shipping_city, shipping_zip, shipping_country, shipping_neighborhood, shipping_state, shipping_complement,
+       coupon_code, discount)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id,
       userId,
@@ -109,8 +160,18 @@ async function insertOrder(
       order.shipping_city,
       order.shipping_zip,
       order.shipping_country,
+      order.shipping_neighborhood ?? null,
+      order.shipping_state ?? null,
+      order.shipping_complement ?? null,
+      order.coupon_code ?? null,
+      order.discount ?? 0,
     ],
   );
+  if (order.coupon_code) {
+    await conn.execute('UPDATE coupons SET uses_count = uses_count + 1 WHERE code = ?', [
+      order.coupon_code.trim().toUpperCase(),
+    ]);
+  }
   return id;
 }
 
@@ -135,8 +196,25 @@ async function insertOrderItems(
   );
 }
 
-// PIX e Boleto: cria pagamento direto via /v1/payments e retorna QR code ou linha digitável
-export const createMercadoPagoDirectPaymentFn = createServerFn({ method: 'POST' })
+// A condição `stock >= ?` faz a dedução falhar (affectedRows = 0) em vez de deixar o
+// estoque negativo — é o jeito seguro de checar+debitar em uma única query atômica.
+async function deductStock(
+  conn: Awaited<ReturnType<typeof db.getConnection>>,
+  items: PaymentItem[],
+): Promise<void> {
+  for (const item of items) {
+    const [result] = await conn.execute(
+      'UPDATE products SET stock = stock - ? WHERE id = ? AND stock >= ?',
+      [item.quantity, item.product_id, item.quantity],
+    );
+    if ((result as any).affectedRows === 0) {
+      throw new Error(`Estoque insuficiente para "${item.product_name}".`);
+    }
+  }
+}
+
+// PIX e Boleto: cria a cobrança no Asaas e retorna QR code ou linha digitável
+export const createAsaasDirectPaymentFn = createServerFn({ method: 'POST' })
   .inputValidator(
     (data: {
       token: string;
@@ -148,6 +226,7 @@ export const createMercadoPagoDirectPaymentFn = createServerFn({ method: 'POST' 
   )
   .handler(async ({ data }) => {
     const user = verifyToken(data.token);
+    const { apiKey, baseUrl } = getAsaasConfig();
 
     const conn = await db.getConnection();
     let orderId: string | undefined;
@@ -155,6 +234,7 @@ export const createMercadoPagoDirectPaymentFn = createServerFn({ method: 'POST' 
       await conn.beginTransaction();
       orderId = await insertOrder(conn, user.id, data.order);
       await insertOrderItems(conn, orderId, data.items);
+      await deductStock(conn, data.items);
       await conn.commit();
     } catch (err) {
       await conn.rollback();
@@ -163,88 +243,88 @@ export const createMercadoPagoDirectPaymentFn = createServerFn({ method: 'POST' 
       conn.release();
     }
 
-    const { name, surname } = formatPayerName(user.fullName);
-    const accessToken = getMpAccessToken();
-    const paymentMethodId = data.payment_type === 'pix' ? 'pix' : 'bolbradesco';
+    const customerId = await findOrCreateAsaasCustomer(apiKey, baseUrl, {
+      name: data.order.shipping_name || user.fullName || 'Cliente',
+      cpfCnpj: data.cpf,
+      email: user.email,
+      postalCode: data.order.shipping_zip,
+      address: data.order.shipping_address,
+    });
 
-    type MpPaymentResponse = {
-      id: number;
+    type AsaasPaymentResponse = {
+      id: string;
       status: string;
-      point_of_interaction?: {
-        transaction_data?: {
-          qr_code?: string;
-          qr_code_base64?: string;
-        };
-      };
-      transaction_details?: {
-        external_resource_url?: string;
-      };
-      barcode?: {
-        content?: string;
-      };
+      bankSlipUrl?: string;
+      invoiceUrl?: string;
     };
 
-    // Em sandbox (TEST-), o email do pagador não pode ser o mesmo do vendedor.
-    const isTestMode = accessToken.startsWith('TEST-');
-    if (isTestMode && !process.env.MP_TEST_BUYER_EMAIL) {
-      throw new Error('Configure MP_TEST_BUYER_EMAIL no .env com o email de um test buyer do Mercado Pago.');
-    }
-    const payerEmail = isTestMode ? process.env.MP_TEST_BUYER_EMAIL! : user.email;
+    const billingType = data.payment_type === 'pix' ? 'PIX' : 'BOLETO';
+    const payment = await asaasRequest<AsaasPaymentResponse>('POST', '/payments', apiKey, baseUrl, {
+      customer: customerId,
+      billingType,
+      value: Number(data.order.total),
+      dueDate: formatDueDate(data.payment_type === 'pix' ? 1 : 3),
+      description: 'Pedido Lumiere',
+      externalReference: orderId ?? '',
+    });
 
-    const result = await mpPost<MpPaymentResponse>(
-      '/v1/payments',
-      {
-        transaction_amount: Number(data.order.total),
-        description: 'Pedido Lumiere',
-        payment_method_id: paymentMethodId,
-        payer: {
-          email: payerEmail,
-          first_name: name,
-          last_name: surname || name,
-          identification: {
-            type: 'CPF',
-            number: data.cpf.replace(/\D/g, ''),
-          },
-        },
-        external_reference: orderId ?? '',
-      },
-      accessToken,
-    );
+    // Guardamos o ID do pagamento no Asaas para poder buscar de novo o QR/boleto depois
+    // (ex: cliente perdeu o código) sem precisar gerar uma nova cobrança.
+    await db.execute('UPDATE orders SET asaas_payment_id = ? WHERE id = ?', [payment.id, orderId]);
 
     if (data.payment_type === 'pix') {
+      type PixQrCodeResponse = { encodedImage?: string; payload?: string };
+      const qr = await asaasRequest<PixQrCodeResponse>(
+        'GET',
+        `/payments/${payment.id}/pixQrCode`,
+        apiKey,
+        baseUrl,
+      );
       return {
         type: 'pix' as const,
-        payment_id: result.id,
+        payment_id: payment.id,
         order_id: orderId ?? '',
-        qr_code: result.point_of_interaction?.transaction_data?.qr_code ?? '',
-        qr_code_base64: result.point_of_interaction?.transaction_data?.qr_code_base64 ?? '',
+        qr_code: qr.payload ?? '',
+        qr_code_base64: qr.encodedImage ?? '',
       };
     } else {
+      type IdentificationFieldResponse = { identificationField?: string };
+      const boleto = await asaasRequest<IdentificationFieldResponse>(
+        'GET',
+        `/payments/${payment.id}/identificationField`,
+        apiKey,
+        baseUrl,
+      );
       return {
         type: 'boleto' as const,
-        payment_id: result.id,
+        payment_id: payment.id,
         order_id: orderId ?? '',
-        boleto_url: result.transaction_details?.external_resource_url ?? '',
-        barcode: result.barcode?.content ?? '',
+        boleto_url: payment.bankSlipUrl ?? payment.invoiceUrl ?? '',
+        barcode: boleto.identificationField ?? '',
       };
     }
   });
 
-// Cartão de crédito: tokeniza no frontend e cobra direto
-export const createMercadoPagoChargeFn = createServerFn({ method: 'POST' })
+// Cartão de crédito: envia os dados direto pro Asaas (tokenização é feita no lado deles)
+export const createAsaasChargeFn = createServerFn({ method: 'POST' })
   .inputValidator(
     (data: {
       token: string;
       order: OrderPayload;
       items: PaymentItem[];
-      card_token: string;
-      installments?: number;
-      payment_method_id?: string;
-      cpf?: string;
+      cpf: string;
+      phone: string;
+      address_number: string;
+      card_holder_name: string;
+      card_number: string;
+      card_expiry_month: string;
+      card_expiry_year: string;
+      card_cvv: string;
     }) => data,
   )
   .handler(async ({ data }) => {
     const user = verifyToken(data.token);
+    const { apiKey, baseUrl } = getAsaasConfig();
 
     const conn = await db.getConnection();
     let orderId: string | undefined;
@@ -252,6 +332,7 @@ export const createMercadoPagoChargeFn = createServerFn({ method: 'POST' })
       await conn.beginTransaction();
       orderId = await insertOrder(conn, user.id, data.order);
       await insertOrderItems(conn, orderId, data.items);
+      await deductStock(conn, data.items);
       await conn.commit();
     } catch (err) {
       await conn.rollback();
@@ -260,43 +341,131 @@ export const createMercadoPagoChargeFn = createServerFn({ method: 'POST' })
       conn.release();
     }
 
-    const accessToken = getMpAccessToken();
+    const customerId = await findOrCreateAsaasCustomer(apiKey, baseUrl, {
+      name: data.order.shipping_name || user.fullName || 'Cliente',
+      cpfCnpj: data.cpf,
+      email: user.email,
+      phone: data.phone,
+      postalCode: data.order.shipping_zip,
+      address: data.order.shipping_address,
+      addressNumber: data.address_number,
+    });
 
-    type MpPaymentResponse = {
-      id: number;
-      status: string;
-      status_detail: string;
-    };
+    const remoteIp = getRequestIP({ xForwardedFor: true }) ?? '127.0.0.1';
 
-    const result = await mpPost<MpPaymentResponse>(
-      '/v1/payments',
-      {
-        transaction_amount: Number(data.order.total),
-        token: data.card_token,
-        description: `Pedido #${orderId}`,
-        installments: data.installments ?? 1,
-        payment_method_id: data.payment_method_id ?? 'visa',
-        payer: {
-          email: user.email,
-          identification: {
-            type: 'CPF',
-            number: (data.cpf ?? '').replace(/\D/g, ''),
-          },
-        },
-        external_reference: orderId ?? '',
+    type AsaasPaymentResponse = { id: string; status: string };
+
+    const payment = await asaasRequest<AsaasPaymentResponse>('POST', '/payments', apiKey, baseUrl, {
+      customer: customerId,
+      billingType: 'CREDIT_CARD',
+      value: Number(data.order.total),
+      dueDate: formatDueDate(0),
+      description: `Pedido #${orderId}`,
+      externalReference: orderId ?? '',
+      creditCard: {
+        holderName: data.card_holder_name,
+        number: data.card_number.replace(/\s/g, ''),
+        expiryMonth: data.card_expiry_month.padStart(2, '0'),
+        expiryYear: data.card_expiry_year,
+        ccv: data.card_cvv,
       },
-      accessToken,
-    );
+      creditCardHolderInfo: {
+        name: data.card_holder_name,
+        email: user.email,
+        cpfCnpj: data.cpf.replace(/\D/g, ''),
+        postalCode: (data.order.shipping_zip || '').replace(/\D/g, ''),
+        addressNumber: data.address_number || 'S/N',
+        phone: data.phone.replace(/\D/g, ''),
+      },
+      remoteIp,
+    });
 
     let status: 'pending' | 'paid' | 'cancelled' = 'pending';
-    if (result.status === 'approved') status = 'paid';
-    else if (result.status === 'rejected') status = 'cancelled';
+    if (payment.status === 'CONFIRMED' || payment.status === 'RECEIVED') status = 'paid';
 
-    await db.execute('UPDATE orders SET status = ? WHERE id = ?', [status, orderId]);
+    await db.execute('UPDATE orders SET status = ?, asaas_payment_id = ? WHERE id = ?', [
+      status,
+      payment.id,
+      orderId,
+    ]);
 
     return {
       orderId,
-      payment: result,
+      payment,
       order_status: status,
     };
+  });
+
+// Retoma um pagamento PIX/boleto pendente (ex: cliente perdeu o QR code ou a linha
+// digitável) buscando de novo direto no Asaas usando o ID já salvo no pedido — nunca
+// gera uma cobrança nova. De brinde, sincroniza o status local se já tiver sido pago.
+export const fetchOrderPaymentFn = createServerFn({ method: 'POST' })
+  .inputValidator((data: { token: string; order_id: string }) => data)
+  .handler(async ({ data }) => {
+    const user = verifyToken(data.token);
+    const { apiKey, baseUrl } = getAsaasConfig();
+
+    const [rows] = await db.execute(
+      'SELECT id, user_id, status, payment_method, asaas_payment_id FROM orders WHERE id = ?',
+      [data.order_id],
+    );
+    const order = (rows as any[])[0];
+    if (!order) throw new Error('Pedido não encontrado.');
+    if (String(order.user_id) !== String(user.id) && !user.isAdmin) {
+      throw new Error('Acesso negado.');
+    }
+    if (!order.asaas_payment_id) {
+      throw new Error('Este pedido não possui um pagamento associado.');
+    }
+    if (order.payment_method !== 'pix' && order.payment_method !== 'boleto') {
+      throw new Error('Este método de pagamento não pode ser retomado por aqui.');
+    }
+
+    type AsaasPaymentResponse = { id: string; status: string; bankSlipUrl?: string; invoiceUrl?: string };
+    const payment = await asaasRequest<AsaasPaymentResponse>(
+      'GET',
+      `/payments/${order.asaas_payment_id}`,
+      apiKey,
+      baseUrl,
+    );
+
+    const isPaid = payment.status === 'CONFIRMED' || payment.status === 'RECEIVED';
+    if (isPaid && order.status !== 'paid') {
+      await db.execute('UPDATE orders SET status = ? WHERE id = ?', ['paid', order.id]);
+    }
+    if (isPaid) {
+      return { type: 'paid' as const, order_id: order.id };
+    }
+
+    if (order.payment_method === 'pix') {
+      type PixQrCodeResponse = { encodedImage?: string; payload?: string };
+      const qr = await asaasRequest<PixQrCodeResponse>(
+        'GET',
+        `/payments/${order.asaas_payment_id}/pixQrCode`,
+        apiKey,
+        baseUrl,
+      );
+      return {
+        type: 'pix' as const,
+        payment_id: order.asaas_payment_id,
+        order_id: order.id,
+        qr_code: qr.payload ?? '',
+        qr_code_base64: qr.encodedImage ?? '',
+      };
+    } else {
+      type IdentificationFieldResponse = { identificationField?: string };
+      const boleto = await asaasRequest<IdentificationFieldResponse>(
+        'GET',
+        `/payments/${order.asaas_payment_id}/identificationField`,
+        apiKey,
+        baseUrl,
+      );
+      return {
+        type: 'boleto' as const,
+        payment_id: order.asaas_payment_id,
+        order_id: order.id,
+        boleto_url: payment.bankSlipUrl ?? payment.invoiceUrl ?? '',
+        barcode: boleto.identificationField ?? '',
+      };
+    }
   });

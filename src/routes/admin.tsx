@@ -1,6 +1,6 @@
 import { createFileRoute, Outlet, Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { LayoutDashboard, Package, Tag, ShoppingCart, ArrowLeft } from "lucide-react";
+import { LayoutDashboard, Package, Tag, ShoppingCart, Ticket, ArrowLeft } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 
 export const Route = createFileRoute("/admin")({ component: AdminLayout });
@@ -10,6 +10,7 @@ const items = [
   { to: "/admin/products", label: "Produtos", icon: Package },
   { to: "/admin/categories", label: "Categorias", icon: Tag },
   { to: "/admin/orders", label: "Pedidos", icon: ShoppingCart },
+  { to: "/admin/coupons", label: "Cupons", icon: Ticket },
 ];
 
 function AdminLayout() {

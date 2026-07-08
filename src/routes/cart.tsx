@@ -1,15 +1,63 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { Trash2, Minus, Plus, ShoppingBag } from "lucide-react";
+import { useState } from "react";
+import { Trash2, Minus, Plus, ShoppingBag, Tag, X } from "lucide-react";
 import { useCart } from "@/contexts/CartContext";
 import { formatBRL } from "@/lib/format";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { toast } from "sonner";
+import { validateCouponFn } from "@/fns/coupons";
 
 export const Route = createFileRoute("/cart")({ component: Cart });
+
+// Persisted so checkout.tsx can pick it up and re-validate server-side after navigation.
+const COUPON_KEY = "lovable_coupon_v1";
+
+type AppliedCoupon = { code: string; discount: number };
 
 function Cart() {
   const { items, setQty, remove, subtotal } = useCart();
   const shipping = subtotal === 0 ? 0 : subtotal >= 199 ? 0 : 24.9;
-  const total = subtotal + shipping;
+  const [coupon, setCoupon] = useState("");
+  const [appliedCoupon, setAppliedCoupon] = useState<AppliedCoupon | null>(null);
+  const [applyingCoupon, setApplyingCoupon] = useState(false);
+  const discount = appliedCoupon?.discount ?? 0;
+  const total = Math.max(0, subtotal - discount + shipping);
+
+  const handleApplyCoupon = async () => {
+    const code = coupon.trim();
+    if (!code) return;
+    setApplyingCoupon(true);
+    try {
+      const result = await validateCouponFn({ data: { code, subtotal } });
+      if (result.valid) {
+        setAppliedCoupon({ code: result.coupon.code, discount: result.discount });
+        toast.success(`Cupom ${result.coupon.code} aplicado!`);
+      } else {
+        setAppliedCoupon(null);
+        toast.error(result.reason);
+      }
+    } catch (err: any) {
+      toast.error(err?.message ?? "Não foi possível validar o cupom.");
+    } finally {
+      setApplyingCoupon(false);
+    }
+  };
+
+  const handleRemoveCoupon = () => {
+    setAppliedCoupon(null);
+    setCoupon("");
+  };
+
+  const handleCheckoutClick = () => {
+    try {
+      if (appliedCoupon) {
+        sessionStorage.setItem(COUPON_KEY, JSON.stringify({ code: appliedCoupon.code }));
+      } else {
+        sessionStorage.removeItem(COUPON_KEY);
+      }
+    } catch {}
+  };
 
   if (items.length === 0) {
     return (
@@ -37,11 +85,27 @@ function Cart() {
                 <div className="mt-1 text-sm text-muted-foreground">{formatBRL(it.price)}</div>
                 <div className="mt-auto flex items-center justify-between">
                   <div className="flex items-center rounded-full border border-input">
-                    <button className="px-2 py-1" onClick={() => setQty(it.id, it.quantity - 1)}><Minus className="h-3 w-3" /></button>
-                    <span className="w-8 text-center text-sm">{it.quantity}</span>
-                    <button className="px-2 py-1" onClick={() => setQty(it.id, it.quantity + 1)}><Plus className="h-3 w-3" /></button>
+                    <button
+                      className="px-2 py-1"
+                      aria-label="Diminuir quantidade"
+                      onClick={() => setQty(it.id, it.quantity - 1)}
+                    >
+                      <Minus className="h-3 w-3" />
+                    </button>
+                    <span className="w-8 text-center text-sm transition-all">{it.quantity}</span>
+                    <button
+                      className="px-2 py-1"
+                      aria-label="Aumentar quantidade"
+                      onClick={() => setQty(it.id, it.quantity + 1)}
+                    >
+                      <Plus className="h-3 w-3" />
+                    </button>
                   </div>
-                  <button onClick={() => remove(it.id)} className="text-muted-foreground hover:text-destructive">
+                  <button
+                    onClick={() => remove(it.id)}
+                    aria-label="Remover item do carrinho"
+                    className="text-muted-foreground hover:text-destructive"
+                  >
                     <Trash2 className="h-4 w-4" />
                   </button>
                 </div>
@@ -53,14 +117,54 @@ function Cart() {
 
         <aside className="h-fit rounded-2xl bg-card p-6 shadow-card">
           <h2 className="mb-4 font-display text-xl">Resumo</h2>
+
+          <div className="mb-4">
+            <label htmlFor="coupon" className="mb-1.5 block text-xs font-medium text-muted-foreground">
+              Cupom de desconto
+            </label>
+            {appliedCoupon ? (
+              <div className="flex items-center gap-1.5 rounded-xl border border-accent/30 bg-accent/5 px-3 py-2 text-sm font-medium text-accent">
+                <Tag className="h-4 w-4" /> {appliedCoupon.code} aplicado
+              </div>
+            ) : (
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <Tag className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    id="coupon"
+                    value={coupon}
+                    onChange={(e) => setCoupon(e.target.value)}
+                    placeholder="Digite o código"
+                    className="pl-9"
+                    disabled={applyingCoupon}
+                  />
+                </div>
+                <Button type="button" variant="outline" onClick={handleApplyCoupon} disabled={applyingCoupon}>
+                  {applyingCoupon ? "..." : "Aplicar"}
+                </Button>
+              </div>
+            )}
+          </div>
+
           <dl className="space-y-2 text-sm">
             <div className="flex justify-between"><dt>Subtotal</dt><dd>{formatBRL(subtotal)}</dd></div>
+            {appliedCoupon && (
+              <div className="flex justify-between text-accent">
+                <dt className="flex items-center gap-1">
+                  Desconto ({appliedCoupon.code})
+                  <button type="button" onClick={handleRemoveCoupon} aria-label="Remover cupom" className="text-muted-foreground hover:text-destructive">
+                    <X className="h-3 w-3" />
+                  </button>
+                </dt>
+                <dd>-{formatBRL(discount)}</dd>
+              </div>
+            )}
             <div className="flex justify-between"><dt>Frete</dt><dd>{shipping === 0 ? "Grátis" : formatBRL(shipping)}</dd></div>
           </dl>
           <div className="my-4 border-t border-border" />
           <div className="flex justify-between text-lg font-semibold"><span>Total</span><span>{formatBRL(total)}</span></div>
           <Button className="mt-6 w-full" size="lg" asChild>
-            <Link to="/checkout">Finalizar compra</Link>
+            <Link to="/checkout" onClick={handleCheckoutClick}>Finalizar compra</Link>
           </Button>
           <Button variant="outline" className="mt-2 w-full" asChild>
             <Link to="/shop">Continuar comprando</Link>
