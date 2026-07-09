@@ -1,11 +1,12 @@
 import mysql from 'mysql2/promise';
+import { getEnv } from './env';
 
 export const db = mysql.createPool({
-  host: process.env.DB_HOST ?? 'localhost',
-  user: process.env.DB_USER ?? 'root',
-  password: process.env.DB_PASSWORD ?? '',
-  database: process.env.DB_NAME ?? '',
-  port: Number(process.env.DB_PORT ?? 3306),
+  host: getEnv('DB_HOST', 'localhost') ?? 'localhost',
+  user: getEnv('DB_USER', 'root') ?? 'root',
+  password: getEnv('DB_PASSWORD', '') ?? '',
+  database: getEnv('DB_NAME', '') ?? '',
+  port: Number(getEnv('DB_PORT', '3306') ?? 3306),
   waitForConnections: true,
   connectionLimit: 10,
 });

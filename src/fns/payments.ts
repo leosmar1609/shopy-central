@@ -4,13 +4,21 @@ import crypto from 'crypto';
 import https from 'node:https';
 import { db } from '@/lib/db';
 import { verifyToken } from '@/lib/jwt';
+import { getEnv } from '@/lib/env';
 
 function getAsaasConfig(): { apiKey: string; baseUrl: string } {
-  const apiKey = process.env.ASAAS_API_KEY;
-  if (!apiKey) {
+  const rawKey = getEnv('ASAAS_API_KEY')?.trim();
+  if (!rawKey) {
     throw new Error('ASAAS_API_KEY inválido ou não configurado.');
   }
-  const baseUrl = process.env.ASAAS_BASE_URL || 'https://sandbox.asaas.com/api/v3';
+  // Chaves do Asaas sempre começam com "$", mas esse caractere é interpretado como
+  // referência de variável de shell pelo dotenv-expand (usado internamente pelo Vite
+  // para carregar o .env) e acaba sendo removido silenciosamente se não vier escapado
+  // como "\$" — o que já causou chave "inválida" duas vezes. Guarde a chave no .env
+  // SEM o "$" (ex: ASAAS_API_KEY=aact_prod_...) e completamos aqui, sem depender de
+  // ninguém lembrar de escapar nada na hora de trocar a chave.
+  const apiKey = rawKey.startsWith('$') ? rawKey : `$${rawKey}`;
+  const baseUrl = getEnv('ASAAS_BASE_URL', 'https://api.asaas.com/v3')?.trim().replace(/\/+$/, '') || 'https://api.asaas.com/v3';
   return { apiKey, baseUrl };
 }
 

@@ -1,11 +1,12 @@
 import jwt from 'jsonwebtoken';
+import { getEnv } from './env';
 
 // No insecure fallback: this app already requires several other env vars
 // (DB_HOST, ASAAS_API_KEY, etc.) to function, so failing loudly here is
 // consistent. A hardcoded fallback secret would let anyone forge valid
 // (including admin) JWTs if the env var was ever missing in a deployed
 // environment.
-const rawSecret = process.env.PJWT_SECRET;
+const rawSecret = getEnv('PJWT_SECRET');
 
 if (!rawSecret) {
   throw new Error(

@@ -1,7 +1,8 @@
 import { Resend } from 'resend';
+import { getEnv } from './env';
 
 function getResendClient(): Resend {
-  const apiKey = process.env.RESEND_API_KEY;
+  const apiKey = getEnv('RESEND_API_KEY');
   if (!apiKey) {
     throw new Error('RESEND_API_KEY não configurado. Configure a variável de ambiente para habilitar o envio de e-mails.');
   }
@@ -9,11 +10,11 @@ function getResendClient(): Resend {
 }
 
 function getFromAddress(): string {
-  return process.env.EMAIL_FROM || 'Lumière <onboarding@resend.dev>';
+  return getEnv('EMAIL_FROM', 'Lumière <onboarding@resend.dev>') || 'Lumière <onboarding@resend.dev>';
 }
 
 export function getSiteUrl(): string {
-  return process.env.VITE_APP_URL || 'http://localhost:5173';
+  return getEnv('VITE_APP_URL', 'http://localhost:5173') || 'http://localhost:5173';
 }
 
 export async function sendEmail(opts: { to: string; subject: string; html: string }): Promise<void> {

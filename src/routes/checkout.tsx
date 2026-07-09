@@ -5,7 +5,7 @@ import { z } from "zod";
 import { X } from "lucide-react";
 import { useCart } from "@/contexts/CartContext";
 import { useAuth } from "@/hooks/useAuth";
-import { createAsaasDirectPaymentFn, createAsaasChargeFn } from "@/fns/payments";
+import { createAsaasDirectPaymentFn, createAsaasChargeFn, fetchOrderPaymentFn } from "@/fns/payments";
 import { validateCouponFn } from "@/fns/coupons";
 import { fetchMyAddressesFn, createAddressFn, type Address } from "@/fns/addresses";
 import { fetchMyProfileFn } from "@/fns/account";
@@ -87,6 +87,7 @@ function Checkout() {
   const [submitting, setSubmitting] = useState(false);
   const [paymentType, setPaymentType] = useState<'card' | 'pix' | 'boleto'>('card');
   const [paymentResult, setPaymentResult] = useState<PaymentResult | null>(null);
+  const [paymentConfirmed, setPaymentConfirmed] = useState(false);
   const [address, setAddress] = useState<AddressState>({
     address: "",
     number: "",
@@ -205,6 +206,44 @@ function Checkout() {
       });
   }, [items.length, subtotal]);
 
+  // Enquanto a tela de PIX/boleto estiver aberta, consulta o status real no Asaas de
+  // tempos em tempos — assim que o pagamento é identificado, o pedido é marcado como
+  // pago (dentro de fetchOrderPaymentFn) e a tela troca a chave/código por uma confirmação.
+  useEffect(() => {
+    if (!paymentResult || paymentConfirmed) return;
+    if (paymentResult.type !== 'pix' && paymentResult.type !== 'boleto') return;
+    const authToken = getStoredToken();
+    if (!authToken) return;
+
+    let cancelled = false;
+    let attempts = 0;
+    const MAX_ATTEMPTS = 100; // ~10 minutos em ciclos de 6s
+
+    const interval = setInterval(async () => {
+      attempts += 1;
+      if (attempts > MAX_ATTEMPTS) {
+        clearInterval(interval);
+        return;
+      }
+      try {
+        const result = await fetchOrderPaymentFn({
+          data: { token: authToken, order_id: paymentResult.order_id },
+        });
+        if (!cancelled && result.type === 'paid') {
+          setPaymentConfirmed(true);
+          clearInterval(interval);
+        }
+      } catch {
+        // Falha na consulta não deve interromper o fluxo — tenta de novo no próximo ciclo.
+      }
+    }, 6000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [paymentResult, paymentConfirmed]);
+
   function handleRemoveCoupon() {
     setAppliedCoupon(null);
     try {
@@ -306,6 +345,25 @@ function Checkout() {
     );
   }
 
+  // --- Pagamento confirmado (detectado durante o polling acima) ---
+  if (paymentResult && paymentConfirmed) {
+    return (
+      <div className="container-page py-12">
+        <div className="mx-auto max-w-md text-center">
+          <div className="mb-4 inline-flex h-14 w-14 items-center justify-center rounded-full bg-green-500/10 text-3xl">✅</div>
+          <h1 className="mb-2 font-display text-3xl">Pagamento confirmado!</h1>
+          <p className="mb-6 text-muted-foreground">
+            Recebemos a confirmação do seu pagamento. Seu pedido já está sendo preparado.
+          </p>
+          <p className="text-xs text-muted-foreground">Pedido #{paymentResult.payment_id} pago.</p>
+          <Button className="mt-6 w-full" asChild>
+            <Link to="/profile">Ver meus pedidos</Link>
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   // --- PIX result ---
   if (paymentResult?.type === 'pix') {
     return (
@@ -347,6 +405,9 @@ function Checkout() {
           )}
           <p className="text-xs text-muted-foreground">
             Pedido #{paymentResult.payment_id} criado. Válido por 24h.
+          </p>
+          <p className="mt-2 text-xs text-muted-foreground">
+            Verificando o pagamento automaticamente — esta página atualiza sozinha quando for identificado.
           </p>
           <Button className="mt-6 w-full" asChild>
             <Link to="/profile">Ver meus pedidos</Link>
@@ -398,6 +459,9 @@ function Checkout() {
           )}
           <p className="text-xs text-muted-foreground">
             Pedido #{paymentResult.payment_id} aguardando pagamento.
+          </p>
+          <p className="mt-2 text-xs text-muted-foreground">
+            Verificando o pagamento automaticamente — esta página atualiza sozinha quando for identificado.
           </p>
           <Button className="mt-6 w-full" asChild>
             <Link to="/profile">Ver meus pedidos</Link>
