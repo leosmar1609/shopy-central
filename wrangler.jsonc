@@ -1,7 +1,20 @@
 {
-  "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "tanstack-start-app",
-  "compatibility_date": "2025-09-24",
-  "compatibility_flags": ["nodejs_compat"],
-  "main": "src/server.ts",
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "tanstack-start-app",
+	"compatibility_date": "2025-09-24",
+	"compatibility_flags": [
+		"nodejs_compat"
+	],
+	"main": "src/server.ts",
+	"workers_dev": false,
+	"hyperdrive": [
+		{
+			"binding": "HYPERDRIVE",
+			"id": "479ba0ed13b5498986ff024c3a40d36b"
+		}
+	],
+	"routes": [
+		{ "pattern": "sshswift.com.br", "zone_name": "sshswift.com.br", "custom_domain": true },
+		{ "pattern": "www.sshswift.com.br", "zone_name": "sshswift.com.br", "custom_domain": true }
+	],
 }

@@ -7,6 +7,12 @@ const withCategory = (row: any) => ({
   categories: row.category_name ? { name: row.category_name } : null,
 });
 
+// `weight_kg` é um dado interno de logística (usado só pra calcular o frete no
+// servidor) — nunca deve ir nas respostas voltadas ao cliente, nem no JSON bruto,
+// então as consultas públicas listam as colunas explicitamente em vez de usar `p.*`.
+const PUBLIC_PRODUCT_COLUMNS =
+  'p.id, p.name, p.slug, p.description, p.price, p.sale_price, p.stock, p.image_url, p.image_urls, p.category_id, p.featured, p.on_sale, p.rating, p.created_at, p.updated_at';
+
 export type ProductSortOption = 'relevance' | 'price_asc' | 'price_desc' | 'newest' | 'rating';
 
 export type ProductsQuery = {
@@ -92,7 +98,7 @@ export const fetchProductsFn = createServerFn({ method: 'GET' })
     const { from, where, params } = buildProductFilters(data);
 
     const [rows] = await db.query(
-      `SELECT p.* FROM ${from} ${where} ORDER BY ${orderBy} LIMIT ? OFFSET ?`,
+      `SELECT ${PUBLIC_PRODUCT_COLUMNS} FROM ${from} ${where} ORDER BY ${orderBy} LIMIT ? OFFSET ?`,
       [...params, pageSize, offset]
     );
     return rows as any[];
@@ -109,12 +115,12 @@ export const fetchProductsCountFn = createServerFn({ method: 'GET' })
   });
 
 export const fetchFeaturedProductsFn = createServerFn({ method: 'GET' }).handler(async () => {
-  const [rows] = await db.query('SELECT * FROM products WHERE featured = 1 LIMIT 8');
+  const [rows] = await db.query(`SELECT ${PUBLIC_PRODUCT_COLUMNS} FROM products p WHERE p.featured = 1 LIMIT 8`);
   return rows as any[];
 });
 
 export const fetchSaleProductsFn = createServerFn({ method: 'GET' }).handler(async () => {
-  const [rows] = await db.query('SELECT * FROM products WHERE on_sale = 1 LIMIT 4');
+  const [rows] = await db.query(`SELECT ${PUBLIC_PRODUCT_COLUMNS} FROM products p WHERE p.on_sale = 1 LIMIT 4`);
   return rows as any[];
 });
 
@@ -122,7 +128,7 @@ export const fetchProductBySlugFn = createServerFn({ method: 'GET' })
   .inputValidator((data: { slug: string }) => data)
   .handler(async ({ data }) => {
     const [rows] = await db.query(
-      'SELECT p.*, c.name AS category_name FROM products p LEFT JOIN categories c ON p.category_id = c.id WHERE p.slug = ? LIMIT 1',
+      `SELECT ${PUBLIC_PRODUCT_COLUMNS}, c.name AS category_name FROM products p LEFT JOIN categories c ON p.category_id = c.id WHERE p.slug = ? LIMIT 1`,
       [data.slug]
     );
     const row = (rows as any[])[0];
@@ -146,7 +152,7 @@ export const createProductFn = createServerFn({ method: 'POST' })
     if (!u.isAdmin) throw new Error('Acesso negado');
     const p = data.payload;
     await db.execute(
-      'INSERT INTO products (name, slug, description, price, sale_price, stock, image_url, image_urls, category_id, featured, on_sale) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      'INSERT INTO products (name, slug, description, price, sale_price, stock, image_url, image_urls, category_id, featured, on_sale, weight_kg) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       [
         p.name,
         p.slug,
@@ -159,6 +165,7 @@ export const createProductFn = createServerFn({ method: 'POST' })
         p.category_id ?? null,
         p.featured ? 1 : 0,
         p.on_sale ? 1 : 0,
+        p.weight_kg ?? 0.3,
       ]
     );
   });
@@ -170,7 +177,7 @@ export const updateProductFn = createServerFn({ method: 'POST' })
     if (!u.isAdmin) throw new Error('Acesso negado');
     const p = data.payload;
     await db.execute(
-      'UPDATE products SET name=?, slug=?, description=?, price=?, sale_price=?, stock=?, image_url=?, image_urls=?, category_id=?, featured=?, on_sale=? WHERE id=?',
+      'UPDATE products SET name=?, slug=?, description=?, price=?, sale_price=?, stock=?, image_url=?, image_urls=?, category_id=?, featured=?, on_sale=?, weight_kg=? WHERE id=?',
       [
         p.name,
         p.slug,
@@ -183,6 +190,7 @@ export const updateProductFn = createServerFn({ method: 'POST' })
         p.category_id ?? null,
         p.featured ? 1 : 0,
         p.on_sale ? 1 : 0,
+        p.weight_kg ?? 0.3,
         data.id,
       ]
     );

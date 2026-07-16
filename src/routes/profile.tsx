@@ -37,6 +37,7 @@ import {
 import { fetchMyFavoritesFn, removeFavoriteFn } from "@/fns/favorites";
 import { fetchMyOrdersFn } from "@/fns/orders";
 import { fetchOrderPaymentFn } from "@/fns/payments";
+import { fetchOrderTrackingFn } from "@/fns/tracking";
 import { fetchActiveCouponsFn } from "@/fns/coupons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -94,6 +95,7 @@ const ORDER_STATUS_LABELS: Record<string, string> = {
   shipped: "Enviado",
   delivered: "Entregue",
   cancelled: "Cancelado",
+  refunded: "Reembolsado",
 };
 
 const ORDER_STATUS_STYLES: Record<string, string> = {
@@ -102,6 +104,7 @@ const ORDER_STATUS_STYLES: Record<string, string> = {
   shipped: "bg-purple-100 text-purple-800 border-purple-200",
   delivered: "bg-green-100 text-green-800 border-green-200",
   cancelled: "bg-red-100 text-red-800 border-red-200",
+  refunded: "bg-slate-100 text-slate-800 border-slate-200",
 };
 
 function OrderStatusBadge({ status }: { status: string }) {
@@ -194,6 +197,63 @@ function OrderPaymentPanel({ result }: { result: Exclude<OrderPaymentResult, { t
             </Button>
           </div>
         </div>
+      )}
+    </div>
+  );
+}
+
+function OrderTrackingPanel({
+  token,
+  orderId,
+  trackingCode,
+}: {
+  token: string;
+  orderId: string;
+  trackingCode: string;
+}) {
+  const { data: trackingInfo, isLoading } = useQuery({
+    queryKey: ["order-tracking", orderId],
+    queryFn: () => fetchOrderTrackingFn({ data: { token, order_id: orderId } }),
+    enabled: !!token && !!trackingCode,
+  });
+
+  if (isLoading) {
+    return <p className="text-sm text-muted-foreground">Carregando rastreio...</p>;
+  }
+
+  if (!trackingInfo) return null;
+
+  return (
+    <div className="rounded-xl border border-input bg-muted p-3">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2 text-sm">
+          <span className="font-medium">{trackingInfo.tracking_code}</span>
+          {trackingInfo.carrier && (
+            <span className="text-xs text-muted-foreground">({trackingInfo.carrier})</span>
+          )}
+        </div>
+        <Button
+          type="button"
+          size="sm"
+          variant="secondary"
+          className="shrink-0 gap-1"
+          onClick={() => copyToClipboard(trackingInfo.tracking_code, "Código de rastreio copiado!")}
+          aria-label="Copiar código de rastreio"
+        >
+          <Copy className="h-3.5 w-3.5" /> Copiar
+        </Button>
+      </div>
+      <p className="text-sm font-medium">{trackingInfo.status}</p>
+      {trackingInfo.events.length > 0 && (
+        <ul className="mt-3 space-y-3">
+          {trackingInfo.events.map((event, idx) => (
+            <li key={idx} className="border-l-2 border-accent/30 pl-3">
+              {event.time && <p className="text-xs text-muted-foreground">{event.time}</p>}
+              {event.location && <p className="text-xs font-medium">{event.location}</p>}
+              <p className="text-sm">{event.description}</p>
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );
@@ -954,6 +1014,13 @@ function OrdersSection() {
                   </div>
                 )}
 
+                {order.tracking_code && (
+                  <div className="mt-4 border-t border-border pt-4">
+                    <p className="mb-2 text-sm font-medium">Rastreamento</p>
+                    <OrderTrackingPanel token={token} orderId={orderId} trackingCode={order.tracking_code} />
+                  </div>
+                )}
+
                 {isOpen && (
                   <div className="mt-4 space-y-4 border-t border-border pt-4">
                     <div>
@@ -1062,9 +1129,11 @@ function FavoritesSection() {
                     <Link to="/product/$slug" params={{ slug: product.slug }} className="font-medium hover:text-accent">
                       {product.name}
                     </Link>
-                    <div className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
-                      <StarIcon className="h-3.5 w-3.5 fill-accent text-accent" /> {Number(product.rating ?? 0).toFixed(1)}
-                    </div>
+                    {Number(product.rating ?? 0) > 0 && (
+                      <div className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
+                        <StarIcon className="h-3.5 w-3.5 fill-accent text-accent" /> {Number(product.rating ?? 0).toFixed(1)}
+                      </div>
+                    )}
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="font-semibold">{formatBRL(Number(finalPrice))}</span>

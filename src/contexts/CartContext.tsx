@@ -7,6 +7,7 @@ export type CartItem = {
   image_url: string | null;
   quantity: number;
   slug: string;
+  weight_kg?: number | null;
 };
 
 type Ctx = {

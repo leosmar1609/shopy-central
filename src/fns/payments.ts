@@ -5,6 +5,7 @@ import https from 'node:https';
 import { db } from '@/lib/db';
 import { verifyToken } from '@/lib/jwt';
 import { getEnv } from '@/lib/env';
+import { calculateShipping, estimateCartWeightKg } from '@/lib/shipping';
 
 function getAsaasConfig(): { apiKey: string; baseUrl: string } {
   const rawKey = getEnv('ASAAS_API_KEY')?.trim();
@@ -143,6 +144,48 @@ async function findOrCreateAsaasCustomer(
   return created.id;
 }
 
+// Nunca confia no frete/total calculado no navegador — recalcula aqui usando o peso
+// real de cada produto (buscado no banco, não o que o cliente mandou) e o CEP de
+// destino informado. Mesma lógica de "recomputa no servidor" já usada pro desconto
+// de cupom (validateCouponFn), agora também pro frete dinâmico.
+async function recomputeAuthoritativeShipping(
+  conn: Awaited<ReturnType<typeof db.getConnection>>,
+  order: OrderPayload,
+  items: PaymentItem[],
+): Promise<OrderPayload> {
+  const productIds = items.map((i) => i.product_id).filter((id) => id != null);
+  const weightByProductId: Record<string, number> = {};
+
+  if (productIds.length) {
+    const placeholders = productIds.map(() => '?').join(',');
+    const [rows] = await conn.execute(
+      `SELECT id, weight_kg FROM products WHERE id IN (${placeholders})`,
+      productIds,
+    );
+    for (const row of rows as any[]) {
+      weightByProductId[String(row.id)] = Number(row.weight_kg);
+    }
+  }
+
+  const totalWeightKg = estimateCartWeightKg(
+    items.map((item) => ({
+      quantity: item.quantity,
+      weight_kg: weightByProductId[String(item.product_id)],
+    })),
+  );
+
+  const { cost: shipping } = calculateShipping({
+    destinationCep: order.shipping_zip,
+    totalWeightKg,
+    subtotal: order.subtotal,
+  });
+
+  const discount = order.discount ?? 0;
+  const total = Math.max(0, order.subtotal - discount + shipping);
+
+  return { ...order, shipping, total };
+}
+
 async function insertOrder(
   conn: Awaited<ReturnType<typeof db.getConnection>>,
   userId: string | number,
@@ -238,9 +281,11 @@ export const createAsaasDirectPaymentFn = createServerFn({ method: 'POST' })
 
     const conn = await db.getConnection();
     let orderId: string | undefined;
+    let order: OrderPayload = data.order;
     try {
       await conn.beginTransaction();
-      orderId = await insertOrder(conn, user.id, data.order);
+      order = await recomputeAuthoritativeShipping(conn, data.order, data.items);
+      orderId = await insertOrder(conn, user.id, order);
       await insertOrderItems(conn, orderId, data.items);
       await deductStock(conn, data.items);
       await conn.commit();
@@ -252,11 +297,11 @@ export const createAsaasDirectPaymentFn = createServerFn({ method: 'POST' })
     }
 
     const customerId = await findOrCreateAsaasCustomer(apiKey, baseUrl, {
-      name: data.order.shipping_name || user.fullName || 'Cliente',
+      name: order.shipping_name || user.fullName || 'Cliente',
       cpfCnpj: data.cpf,
       email: user.email,
-      postalCode: data.order.shipping_zip,
-      address: data.order.shipping_address,
+      postalCode: order.shipping_zip,
+      address: order.shipping_address,
     });
 
     type AsaasPaymentResponse = {
@@ -270,7 +315,7 @@ export const createAsaasDirectPaymentFn = createServerFn({ method: 'POST' })
     const payment = await asaasRequest<AsaasPaymentResponse>('POST', '/payments', apiKey, baseUrl, {
       customer: customerId,
       billingType,
-      value: Number(data.order.total),
+      value: Number(order.total),
       dueDate: formatDueDate(data.payment_type === 'pix' ? 1 : 3),
       description: 'Pedido Lumiere',
       externalReference: orderId ?? '',
@@ -336,9 +381,11 @@ export const createAsaasChargeFn = createServerFn({ method: 'POST' })
 
     const conn = await db.getConnection();
     let orderId: string | undefined;
+    let order: OrderPayload = data.order;
     try {
       await conn.beginTransaction();
-      orderId = await insertOrder(conn, user.id, data.order);
+      order = await recomputeAuthoritativeShipping(conn, data.order, data.items);
+      orderId = await insertOrder(conn, user.id, order);
       await insertOrderItems(conn, orderId, data.items);
       await deductStock(conn, data.items);
       await conn.commit();
@@ -350,12 +397,12 @@ export const createAsaasChargeFn = createServerFn({ method: 'POST' })
     }
 
     const customerId = await findOrCreateAsaasCustomer(apiKey, baseUrl, {
-      name: data.order.shipping_name || user.fullName || 'Cliente',
+      name: order.shipping_name || user.fullName || 'Cliente',
       cpfCnpj: data.cpf,
       email: user.email,
       phone: data.phone,
-      postalCode: data.order.shipping_zip,
-      address: data.order.shipping_address,
+      postalCode: order.shipping_zip,
+      address: order.shipping_address,
       addressNumber: data.address_number,
     });
 
@@ -366,7 +413,7 @@ export const createAsaasChargeFn = createServerFn({ method: 'POST' })
     const payment = await asaasRequest<AsaasPaymentResponse>('POST', '/payments', apiKey, baseUrl, {
       customer: customerId,
       billingType: 'CREDIT_CARD',
-      value: Number(data.order.total),
+      value: Number(order.total),
       dueDate: formatDueDate(0),
       description: `Pedido #${orderId}`,
       externalReference: orderId ?? '',
@@ -381,7 +428,7 @@ export const createAsaasChargeFn = createServerFn({ method: 'POST' })
         name: data.card_holder_name,
         email: user.email,
         cpfCnpj: data.cpf.replace(/\D/g, ''),
-        postalCode: (data.order.shipping_zip || '').replace(/\D/g, ''),
+        postalCode: (order.shipping_zip || '').replace(/\D/g, ''),
         addressNumber: data.address_number || 'S/N',
         phone: data.phone.replace(/\D/g, ''),
       },
@@ -475,5 +522,56 @@ export const fetchOrderPaymentFn = createServerFn({ method: 'POST' })
         boleto_url: payment.bankSlipUrl ?? payment.invoiceUrl ?? '',
         barcode: boleto.identificationField ?? '',
       };
+    }
+  });
+
+// Reembolsa um pedido: estorna a cobrança no Asaas, devolve o estoque dos itens e
+// marca o pedido como 'refunded'. Ação exclusiva de admin.
+export const refundOrderFn = createServerFn({ method: 'POST' })
+  .inputValidator((data: { token: string; order_id: string; reason?: string }) => data)
+  .handler(async ({ data }) => {
+    const user = verifyToken(data.token);
+    if (!user.isAdmin) throw new Error('Acesso negado.');
+    const { apiKey, baseUrl } = getAsaasConfig();
+
+    const [rows] = await db.execute(
+      'SELECT id, status, asaas_payment_id FROM orders WHERE id = ?',
+      [data.order_id],
+    );
+    const order = (rows as any[])[0];
+    if (!order) throw new Error('Pedido não encontrado.');
+    if (order.status === 'refunded') throw new Error('Este pedido já foi reembolsado.');
+    if (order.status === 'cancelled') throw new Error('Pedido cancelado não pode ser reembolsado.');
+    if (!order.asaas_payment_id) throw new Error('Este pedido não possui um pagamento associado no Asaas.');
+
+    // Se o Asaas recusar (ex: saldo insuficiente pra estornar boleto já sacado), o erro
+    // já sobe com a mensagem real deles — nada é alterado no banco antes de confirmar.
+    await asaasRequest('POST', `/payments/${order.asaas_payment_id}/refund`, apiKey, baseUrl, {});
+
+    const conn = await db.getConnection();
+    try {
+      await conn.beginTransaction();
+      const [items] = await conn.execute(
+        'SELECT product_id, quantity FROM order_items WHERE order_id = ?',
+        [data.order_id],
+      );
+      for (const item of items as any[]) {
+        if (item.product_id) {
+          await conn.execute('UPDATE products SET stock = stock + ? WHERE id = ?', [
+            item.quantity,
+            item.product_id,
+          ]);
+        }
+      }
+      await conn.execute(
+        'UPDATE orders SET status = ?, refunded_at = NOW(), refund_reason = ? WHERE id = ?',
+        ['refunded', data.reason ?? null, data.order_id],
+      );
+      await conn.commit();
+    } catch (err) {
+      await conn.rollback();
+      throw err;
+    } finally {
+      conn.release();
     }
   });

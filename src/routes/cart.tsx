@@ -1,27 +1,51 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState } from "react";
-import { Trash2, Minus, Plus, ShoppingBag, Tag, X } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Trash2, Minus, Plus, ShoppingBag, Tag, Truck, X } from "lucide-react";
 import { useCart } from "@/contexts/CartContext";
 import { formatBRL } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { validateCouponFn } from "@/fns/coupons";
+import { calculateShipping, estimateCartWeightKg } from "@/lib/shipping";
+import { maskCEP, onlyDigits } from "@/lib/masks";
 
 export const Route = createFileRoute("/cart")({ component: Cart });
 
 // Persisted so checkout.tsx can pick it up and re-validate server-side after navigation.
 const COUPON_KEY = "lovable_coupon_v1";
+// Bonus continuity: if checkout.tsx ever wants to prefill its address CEP, it can read
+// this. Cart-local shipping estimate remains fully authoritative-free either way —
+// checkout always recomputes shipping server-side from the address the user confirms there.
+const CEP_KEY = "lovable_cart_cep_v1";
 
 type AppliedCoupon = { code: string; discount: number };
 
 function Cart() {
   const { items, setQty, remove, subtotal } = useCart();
-  const shipping = subtotal === 0 ? 0 : subtotal >= 199 ? 0 : 24.9;
   const [coupon, setCoupon] = useState("");
   const [appliedCoupon, setAppliedCoupon] = useState<AppliedCoupon | null>(null);
   const [applyingCoupon, setApplyingCoupon] = useState(false);
+  const [cep, setCep] = useState("");
   const discount = appliedCoupon?.discount ?? 0;
+
+  const cepDigits = onlyDigits(cep);
+  const freeAlready = subtotal >= 199;
+
+  // Pure/synchronous — no loading state needed. Recalculates whenever the CEP, cart
+  // contents, or subtotal change. Before a valid 8-digit CEP is entered we don't show a
+  // shipping estimate at all, unless the subtotal already qualifies for free shipping
+  // (in which case the CEP digits don't affect the result anyway).
+  const shippingEstimate = useMemo(() => {
+    if (!freeAlready && cepDigits.length < 8) return null;
+    return calculateShipping({
+      destinationCep: cep,
+      totalWeightKg: estimateCartWeightKg(items),
+      subtotal,
+    });
+  }, [cep, cepDigits, items, subtotal, freeAlready]);
+
+  const shipping = shippingEstimate?.cost ?? 0;
   const total = Math.max(0, subtotal - discount + shipping);
 
   const handleApplyCoupon = async () => {
@@ -55,6 +79,11 @@ function Cart() {
         sessionStorage.setItem(COUPON_KEY, JSON.stringify({ code: appliedCoupon.code }));
       } else {
         sessionStorage.removeItem(COUPON_KEY);
+      }
+      if (cepDigits.length === 8) {
+        sessionStorage.setItem(CEP_KEY, cep);
+      } else {
+        sessionStorage.removeItem(CEP_KEY);
       }
     } catch {}
   };
@@ -146,6 +175,30 @@ function Cart() {
             )}
           </div>
 
+          <div className="mb-4">
+            <label htmlFor="cep" className="mb-1.5 block text-xs font-medium text-muted-foreground">
+              Calcular frete
+            </label>
+            <div className="relative">
+              <Truck className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                id="cep"
+                value={cep}
+                onChange={(e) => setCep(maskCEP(e.target.value))}
+                placeholder="00000-000"
+                inputMode="numeric"
+                autoComplete="postal-code"
+                maxLength={9}
+                className="pl-9"
+              />
+            </div>
+            {shippingEstimate && !shippingEstimate.free && (
+              <p className="mt-1.5 text-xs text-muted-foreground">
+                Chegará em até {shippingEstimate.etaDays} dia{shippingEstimate.etaDays === 1 ? "" : "s"} útil{shippingEstimate.etaDays === 1 ? "" : "eis"}
+              </p>
+            )}
+          </div>
+
           <dl className="space-y-2 text-sm">
             <div className="flex justify-between"><dt>Subtotal</dt><dd>{formatBRL(subtotal)}</dd></div>
             {appliedCoupon && (
@@ -159,7 +212,18 @@ function Cart() {
                 <dd>-{formatBRL(discount)}</dd>
               </div>
             )}
-            <div className="flex justify-between"><dt>Frete</dt><dd>{shipping === 0 ? "Grátis" : formatBRL(shipping)}</dd></div>
+            <div className="flex justify-between">
+              <dt>Frete</dt>
+              <dd>
+                {shippingEstimate === null ? (
+                  <span className="text-muted-foreground">Informe o CEP</span>
+                ) : shippingEstimate.free ? (
+                  "Grátis"
+                ) : (
+                  formatBRL(shippingEstimate.cost)
+                )}
+              </dd>
+            </div>
           </dl>
           <div className="my-4 border-t border-border" />
           <div className="flex justify-between text-lg font-semibold"><span>Total</span><span>{formatBRL(total)}</span></div>

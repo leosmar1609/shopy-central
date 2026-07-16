@@ -249,8 +249,8 @@ function AdminCoupons() {
         </Dialog>
       </div>
 
-      <div className="overflow-hidden rounded-2xl bg-card shadow-card">
-        <table className="w-full text-sm">
+      <div className="overflow-x-auto rounded-2xl bg-card shadow-card">
+        <table className="w-full min-w-[640px] text-sm">
           <thead className="bg-muted/50 text-left text-xs uppercase text-muted-foreground">
             <tr>
               <th className="p-3">Código</th>

@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { z } from "zod";
 import { X } from "lucide-react";
@@ -29,6 +29,7 @@ import {
   onlyDigits,
 } from "@/lib/masks";
 import { fetchAddressByCep } from "@/lib/viacep";
+import { calculateShipping, estimateCartWeightKg } from "@/lib/shipping";
 
 export const Route = createFileRoute("/checkout")({ component: Checkout });
 
@@ -323,7 +324,19 @@ function Checkout() {
     }
   }
 
-  const shipping = subtotal === 0 ? 0 : subtotal >= 199 ? 0 : 24.9;
+  // Estimativa em tempo real exibida ao cliente — o servidor recalcula o valor
+  // autoritativo de frete na criação do pedido (src/fns/payments.ts) independente
+  // do que for enviado aqui, então isto é só para exibição/transparência no checkout.
+  const shippingEstimate = useMemo(() => {
+    if (subtotal === 0) return { cost: 0, etaDays: 0, free: true };
+    return calculateShipping({
+      destinationCep: address.zip,
+      totalWeightKg: estimateCartWeightKg(items),
+      subtotal,
+    });
+  }, [address.zip, items, subtotal]);
+  const shipping = shippingEstimate.cost;
+  const cepComplete = onlyDigits(address.zip).length === 8;
   const discount = appliedCoupon?.discount ?? 0;
   const total = Math.max(0, subtotal - discount + shipping);
 
@@ -968,6 +981,12 @@ function Checkout() {
           <div className="mt-2 flex justify-between text-sm">
             <span>Frete</span><span>{shipping === 0 ? "Grátis" : formatBRL(shipping)}</span>
           </div>
+          {!shippingEstimate.free && (
+            <p className="mt-1 text-xs text-muted-foreground">
+              Chega em até {shippingEstimate.etaDays} dias úteis
+              {!cepComplete && " — frete estimado, confirme seu CEP"}
+            </p>
+          )}
           <div className="mt-3 flex justify-between text-lg font-semibold">
             <span>Total</span><span>{formatBRL(total)}</span>
           </div>

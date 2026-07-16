@@ -16,6 +16,7 @@ export type ProductCardProps = {
   image_urls?: string[];
   on_sale: boolean;
   rating: number | string | null | undefined;
+  weight_kg?: number | string | null;
 };
 
 export function ProductCard(p: ProductCardProps) {
@@ -56,9 +57,11 @@ export function ProductCard(p: ProductCardProps) {
         </button>
       </Link>
       <div className="flex flex-1 flex-col gap-3 p-5">
-        <div className="flex items-center gap-1 text-xs text-muted-foreground">
-          <Star className="h-3.5 w-3.5 fill-accent text-accent" /> {rating.toFixed(1)}
-        </div>
+        {rating > 0 && (
+          <div className="flex items-center gap-1 text-xs text-muted-foreground">
+            <Star className="h-3.5 w-3.5 fill-accent text-accent" /> {rating.toFixed(1)}
+          </div>
+        )}
         <Link to="/product/$slug" params={{ slug: p.slug }} className="font-medium leading-snug hover:text-accent">
           {p.name}
         </Link>
@@ -73,7 +76,7 @@ export function ProductCard(p: ProductCardProps) {
             size="icon"
             variant="default"
             onClick={() => {
-              add({ id: p.id, name: p.name, price: finalPrice, image_url: p.image_url, slug: p.slug });
+              add({ id: p.id, name: p.name, price: finalPrice, image_url: p.image_url, slug: p.slug, weight_kg: Number(p.weight_kg) || undefined });
               toast.success("Adicionado ao carrinho");
             }}
             aria-label="Adicionar ao carrinho"

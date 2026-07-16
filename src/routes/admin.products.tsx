@@ -54,6 +54,7 @@ function AdminProducts() {
       price: Number(fd.get("price")),
       sale_price: fd.get("sale_price") ? Number(fd.get("sale_price")) : null,
       stock: Number(fd.get("stock")),
+      weight_kg: Number(fd.get("weight_kg")) || 0.3,
       image_url: String(fd.get("image_url")),
       image_urls: parseImageUrls(fd.get("image_urls") as string | null),
       category_id: String(fd.get("category_id")) || null,
@@ -104,6 +105,11 @@ function AdminProducts() {
               <div><Label>Preço promocional</Label><Input name="sale_price" type="number" step="0.01" defaultValue={editing?.sale_price ?? ""} /></div>
               <div><Label>Estoque</Label><Input name="stock" type="number" defaultValue={editing?.stock ?? 0} required /></div>
               <div>
+                <Label>Peso (kg)</Label>
+                <Input name="weight_kg" type="number" step="0.001" min="0" defaultValue={editing?.weight_kg ?? 0.3} />
+                <p className="text-xs text-muted-foreground">Usado para calcular o frete automaticamente</p>
+              </div>
+              <div>
                 <Label>Categoria</Label>
                 <Select name="category_id" defaultValue={editing?.category_id ? String(editing.category_id) : undefined}>
                   <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
@@ -128,10 +134,10 @@ function AdminProducts() {
         </Dialog>
       </div>
 
-      <div className="overflow-hidden rounded-2xl bg-card shadow-card">
-        <table className="w-full text-sm">
+      <div className="overflow-x-auto rounded-2xl bg-card shadow-card">
+        <table className="w-full min-w-[640px] text-sm">
           <thead className="bg-muted/50 text-left text-xs uppercase text-muted-foreground">
-            <tr><th className="p-3">Produto</th><th className="p-3">Categoria</th><th className="p-3">Preço</th><th className="p-3">Estoque</th><th className="p-3"></th></tr>
+            <tr><th className="p-3">Produto</th><th className="p-3">Categoria</th><th className="p-3">Preço</th><th className="p-3">Estoque</th><th className="p-3">Peso (kg)</th><th className="p-3"></th></tr>
           </thead>
           <tbody>
             {products.map((p) => (
@@ -145,6 +151,7 @@ function AdminProducts() {
                 <td className="p-3 text-muted-foreground">{p.categories?.name ?? "—"}</td>
                 <td className="p-3">{formatBRL(Number(p.price))}</td>
                 <td className="p-3">{p.stock}</td>
+                <td className="p-3">{p.weight_kg ?? "—"}</td>
                 <td className="p-3 text-right">
                   <Button variant="ghost" size="icon" onClick={() => { setEditing(p); setOpen(true); }}><Edit2 className="h-4 w-4" /></Button>
                   <Button variant="ghost" size="icon" onClick={() => del(p.id)}><Trash2 className="h-4 w-4 text-destructive" /></Button>

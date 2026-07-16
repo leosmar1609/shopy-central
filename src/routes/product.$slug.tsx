@@ -171,12 +171,14 @@ function Product() {
               <div className="text-xs font-medium uppercase tracking-widest text-accent">{product.categories.name}</div>
             )}
             <h1 className="mt-2 font-display text-4xl md:text-5xl">{product.name}</h1>
-            <div className="mt-3 flex items-center gap-2 text-sm">
-              <div className="flex items-center gap-1">
-                <Star className="h-4 w-4 fill-accent text-accent" /> {Number(product.rating ?? 0).toFixed(1)}
+            {reviews.length > 0 && (
+              <div className="mt-3 flex items-center gap-2 text-sm">
+                <div className="flex items-center gap-1">
+                  <Star className="h-4 w-4 fill-accent text-accent" /> {Number(product.rating ?? 0).toFixed(1)}
+                </div>
+                <span className="text-muted-foreground">({reviews.length} avaliações)</span>
               </div>
-              <span className="text-muted-foreground">({reviews.length} avaliações)</span>
-            </div>
+            )}
           </div>
 
           <div className="flex items-end gap-3">
@@ -224,7 +226,7 @@ function Product() {
               className="flex-1"
               disabled={product.stock <= 0}
               onClick={() => {
-                add({ id: product.id, name: product.name, price: finalPrice, image_url: product.image_url, slug: product.slug }, qty);
+                add({ id: product.id, name: product.name, price: finalPrice, image_url: product.image_url, slug: product.slug, weight_kg: Number(product.weight_kg) || undefined }, qty);
                 toast.success("Adicionado ao carrinho");
               }}
             >
@@ -252,7 +254,7 @@ function Product() {
 
           <div className="grid grid-cols-2 gap-3 rounded-2xl bg-secondary/50 p-4 text-sm">
             <div className="flex items-center gap-2"><Truck className="h-4 w-4 text-accent" /> Frete grátis acima R$199</div>
-            <div className="flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-accent" /> Garantia de 12 meses</div>
+            <div className="flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-accent" /> Troca grátis em até 7 dias</div>
           </div>
         </div>
       </div>

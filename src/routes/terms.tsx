@@ -1,5 +1,4 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { AlertTriangle } from "lucide-react";
 
 export const Route = createFileRoute("/terms")({ component: Terms });
 
@@ -8,15 +7,6 @@ function Terms() {
     <div className="container-page py-12 md:py-16">
       <h1 className="mb-4 font-display text-4xl md:text-5xl">Termos de Uso</h1>
       <p className="mb-6 text-sm text-muted-foreground">Última atualização: julho de 2026.</p>
-
-      <div className="mb-8 flex gap-3 rounded-2xl border border-accent/30 bg-accent/5 p-4 text-sm">
-        <AlertTriangle className="h-5 w-5 shrink-0 text-accent" aria-hidden="true" />
-        <p>
-          <strong>Aviso:</strong> este texto é um modelo genérico de Termos de Uso e não constitui
-          aconselhamento jurídico. Recomendamos que um advogado revise e adapte este documento à
-          realidade da sua operação antes de publicá-lo em produção.
-        </p>
-      </div>
 
       <div className="max-w-3xl space-y-8 rounded-2xl bg-card p-6 shadow-card md:p-8">
         <section>
