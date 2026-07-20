@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import {
   Star,
@@ -12,21 +12,28 @@ import {
   Share2,
 } from "lucide-react";
 import { fetchProductBySlugFn, fetchProductsFn } from "@/fns/products";
-import { fetchReviewsFn } from "@/fns/reviews";
+import { fetchReviewsFn, createReviewFn } from "@/fns/reviews";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 import { ProductCard } from "@/components/ProductCard";
 import { useCart } from "@/contexts/CartContext";
 import { useWishlist } from "@/contexts/WishlistContext";
+import { useAuth } from "@/hooks/useAuth";
+import { getStoredToken } from "@/lib/auth-client";
 import { formatBRL } from "@/lib/format";
+import { calculateMaxInstallments } from "@/lib/installments";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/product/$slug")({ component: Product });
+
+const CLOTHING_SIZES = ["P", "M", "G", "GG"];
 
 function Product() {
   const { slug } = Route.useParams();
   const { add } = useCart();
   const { has, toggle } = useWishlist();
   const [qty, setQty] = useState(1);
+  const [selectedSize, setSelectedSize] = useState<string | null>(null);
 
   const { data: product, isLoading } = useQuery({
     queryKey: ["product", slug],
@@ -101,7 +108,9 @@ function Product() {
   if (isLoading) return <div className="container-page py-20 text-center text-muted-foreground">Carregando...</div>;
   if (!product) return <div className="container-page py-20 text-center">Produto não encontrado</div>;
 
-  const finalPrice = product.on_sale && product.sale_price ? Number(product.sale_price) : Number(product.price);
+  const hasSalePrice = Number(product.sale_price) > 0 && Number(product.sale_price) < Number(product.price);
+  const finalPrice = hasSalePrice ? Number(product.sale_price) : Number(product.price);
+  const maxInstallments = calculateMaxInstallments(finalPrice);
 
   return (
     <div className="container-page py-10">
@@ -183,10 +192,15 @@ function Product() {
 
           <div className="flex items-end gap-3">
             <div className="text-4xl font-semibold">{formatBRL(finalPrice)}</div>
-            {product.on_sale && product.sale_price && (
+            {hasSalePrice && (
               <div className="text-lg text-muted-foreground line-through">{formatBRL(Number(product.price))}</div>
             )}
           </div>
+          {maxInstallments > 1 && (
+            <p className="text-sm text-muted-foreground">
+              ou em até {maxInstallments}x de {formatBRL(finalPrice / maxInstallments)} sem juros no cartão
+            </p>
+          )}
 
           <p className="text-muted-foreground leading-relaxed">{product.description}</p>
 
@@ -202,6 +216,26 @@ function Product() {
           <div className="text-xs text-muted-foreground">
             SKU: SKU-{String(product.id).padStart(6, "0")}
           </div>
+
+          {Boolean(product.is_clothing) && (
+            <div>
+              <p className="mb-2 text-sm font-medium">Tamanho</p>
+              <div className="flex gap-2">
+                {CLOTHING_SIZES.map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => setSelectedSize(s)}
+                    className={`flex h-10 w-12 items-center justify-center rounded-lg border text-sm font-medium transition-colors ${
+                      selectedSize === s ? "border-accent bg-accent text-accent-foreground" : "border-input hover:bg-secondary"
+                    }`}
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div className="flex items-center gap-3">
             <div className="flex items-center rounded-full border border-input">
@@ -226,7 +260,22 @@ function Product() {
               className="flex-1"
               disabled={product.stock <= 0}
               onClick={() => {
-                add({ id: product.id, name: product.name, price: finalPrice, image_url: product.image_url, slug: product.slug, weight_kg: Number(product.weight_kg) || undefined }, qty);
+                if (Boolean(product.is_clothing) && !selectedSize) {
+                  toast.error("Escolha um tamanho antes de adicionar ao carrinho.");
+                  return;
+                }
+                add(
+                  {
+                    id: product.id,
+                    name: product.name,
+                    price: finalPrice,
+                    image_url: product.image_url,
+                    slug: product.slug,
+                    weight_kg: Number(product.weight_kg) || undefined,
+                    size: selectedSize,
+                  },
+                  qty,
+                );
                 toast.success("Adicionado ao carrinho");
               }}
             >
@@ -259,23 +308,7 @@ function Product() {
         </div>
       </div>
 
-      <section className="mt-20">
-        <h2 className="mb-6 font-display text-2xl">Avaliações</h2>
-        {reviews.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Ainda não há avaliações para este produto.</p>
-        ) : (
-          <ul className="space-y-4">
-            {reviews.map((r) => (
-              <li key={r.id} className="rounded-xl border border-border/60 bg-card p-4">
-                <div className="mb-2 flex items-center gap-1 text-accent">
-                  {Array.from({ length: r.rating }).map((_, i) => <Star key={i} className="h-4 w-4 fill-accent" />)}
-                </div>
-                <p className="text-sm">{r.comment}</p>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+      <ReviewsSection productId={product.id} reviews={reviews} />
 
       {relatedProducts.length > 0 && (
         <section className="mt-20">
@@ -288,5 +321,131 @@ function Product() {
         </section>
       )}
     </div>
+  );
+}
+
+function ReviewsSection({ productId, reviews }: { productId: string; reviews: any[] }) {
+  const { user } = useAuth();
+  const qc = useQueryClient();
+  const myReview = user ? reviews.find((r) => String(r.user_id) === String(user.id)) : null;
+
+  const [rating, setRating] = useState(myReview?.rating ?? 0);
+  const [hoverRating, setHoverRating] = useState(0);
+  const [comment, setComment] = useState(myReview?.comment ?? "");
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    setRating(myReview?.rating ?? 0);
+    setComment(myReview?.comment ?? "");
+  }, [myReview?.id]);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!user) return;
+    if (rating < 1) {
+      toast.error("Selecione de 1 a 5 estrelas.");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await createReviewFn({ data: { token: getStoredToken() ?? "", productId, rating, comment } });
+      toast.success(myReview ? "Avaliação atualizada!" : "Avaliação enviada, obrigado!");
+
+      // Atualiza a lista na hora — sem isso, a avaliação só aparecia depois de um novo
+      // round-trip de rede (invalidateQueries + refetch), o que na prática parecia travado.
+      qc.setQueryData<any[]>(["reviews", productId], (old = []) => {
+        const mine = {
+          id: myReview?.id ?? `local-${user.id}`,
+          product_id: productId,
+          user_id: user.id,
+          rating,
+          comment,
+          full_name: user.fullName ?? myReview?.full_name ?? "Você",
+          created_at: new Date().toISOString(),
+        };
+        return [mine, ...old.filter((r) => String(r.user_id) !== String(user.id))];
+      });
+      qc.invalidateQueries({ queryKey: ["product"] });
+    } catch (err: any) {
+      toast.error(err.message ?? "Erro ao enviar avaliação");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <section className="mt-20">
+      <h2 className="mb-6 font-display text-2xl">Avaliações e comentários</h2>
+
+      {user ? (
+        <form onSubmit={handleSubmit} className="mb-8 rounded-2xl border border-border/60 bg-card p-5">
+          <p className="mb-3 text-sm font-medium">
+            {myReview ? "Editar sua avaliação" : "Deixe sua avaliação"}
+          </p>
+          <div className="mb-1 flex items-center gap-1">
+            {[1, 2, 3, 4, 5].map((n) => (
+              <button
+                key={n}
+                type="button"
+                onClick={() => setRating(n)}
+                onMouseEnter={() => setHoverRating(n)}
+                onMouseLeave={() => setHoverRating(0)}
+                aria-label={`${n} estrela${n === 1 ? "" : "s"}`}
+                className="p-1"
+              >
+                <Star className={`h-8 w-8 ${(hoverRating || rating) >= n ? "fill-accent text-accent" : "text-muted-foreground"}`} />
+              </button>
+            ))}
+          </div>
+          <p className="mb-3 text-xs text-muted-foreground">
+            {rating > 0 ? `Sua nota: ${rating} de 5 estrelas` : "Toque em uma estrela para dar sua nota"}
+          </p>
+          <Textarea
+            value={comment}
+            onChange={(e) => setComment(e.target.value)}
+            placeholder="Conte o que achou do produto (opcional)"
+            className="mb-3"
+          />
+          <Button type="submit" disabled={submitting}>
+            {submitting ? "Enviando..." : myReview ? "Atualizar avaliação" : "Enviar avaliação"}
+          </Button>
+        </form>
+      ) : (
+        <div className="mb-8 rounded-2xl border border-dashed border-border p-5 text-sm text-muted-foreground">
+          <Link to="/login" className="font-medium text-accent hover:underline">Faça login</Link> para deixar uma avaliação ou comentário.
+        </div>
+      )}
+
+      {reviews.length === 0 ? (
+        <p className="text-sm text-muted-foreground">Ainda não há avaliações para este produto.</p>
+      ) : (
+        <ul className="space-y-4">
+          {reviews.map((r) => (
+            <li
+              key={r.id}
+              className={`rounded-xl border p-4 ${
+                user && String(r.user_id) === String(user.id) ? "border-accent/40 bg-accent/5" : "border-border/60 bg-card"
+              }`}
+            >
+              <div className="mb-1 flex items-center justify-between">
+                <span className="text-sm font-medium">
+                  {r.full_name ?? "Cliente Lumière"}
+                  {user && String(r.user_id) === String(user.id) && (
+                    <span className="ml-2 text-xs font-normal text-accent">(sua avaliação)</span>
+                  )}
+                </span>
+                <span className="text-xs text-muted-foreground">{new Date(r.created_at).toLocaleDateString("pt-BR")}</span>
+              </div>
+              <div className="mb-2 flex items-center gap-1 text-accent">
+                {Array.from({ length: r.rating }).map((_, i) => (
+                  <Star key={i} className="h-4 w-4 fill-accent" />
+                ))}
+              </div>
+              {r.comment && <p className="text-sm">{r.comment}</p>}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }

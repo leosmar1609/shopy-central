@@ -1,8 +1,10 @@
 import { createServerFn } from '@tanstack/react-start';
+import { setResponseHeaders } from '@tanstack/react-start/server';
 import { db } from '@/lib/db';
 import { verifyToken } from '@/lib/jwt';
 
 export const fetchCategoriesFn = createServerFn({ method: 'GET' }).handler(async () => {
+  setResponseHeaders({ 'Cache-Control': 'no-store' } as any);
   const [rows] = await db.query('SELECT * FROM categories ORDER BY name');
   return rows as any[];
 });

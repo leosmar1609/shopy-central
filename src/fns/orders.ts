@@ -1,4 +1,5 @@
 import { createServerFn } from '@tanstack/react-start';
+import { setResponseHeaders } from '@tanstack/react-start/server';
 import { db } from '@/lib/db';
 import { verifyToken } from '@/lib/jwt';
 
@@ -29,6 +30,7 @@ export const fetchMyOrdersFn = createServerFn({ method: 'GET' })
   .inputValidator((data: { token: string }) => data)
   .handler(async ({ data }) => {
     const user = verifyToken(data.token);
+    setResponseHeaders({ 'Cache-Control': 'no-store' } as any);
     const [orders] = await db.execute('SELECT * FROM orders WHERE user_id = ? ORDER BY created_at DESC', [user.id]);
     const list = orders as any[];
     if (list.length === 0) return [];
@@ -50,6 +52,7 @@ export const fetchAdminOrdersFn = createServerFn({ method: 'GET' })
   .handler(async ({ data }) => {
     const u = verifyToken(data.token);
     if (!u.isAdmin) throw new Error('Acesso negado');
+    setResponseHeaders({ 'Cache-Control': 'no-store' } as any);
     const [orders] = await db.query('SELECT * FROM orders ORDER BY created_at DESC');
     const list = orders as any[];
     if (list.length === 0) return [];

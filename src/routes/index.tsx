@@ -1,17 +1,26 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRight, Truck, ShieldCheck, RefreshCw, Sparkles } from "lucide-react";
+import { ArrowRight, Truck, ShieldCheck, RefreshCw, Sparkles, CreditCard } from "lucide-react";
+import { MAX_INSTALLMENTS } from "@/lib/installments";
 import { fetchFeaturedProductsFn, fetchSaleProductsFn } from "@/fns/products";
 import { fetchCategoriesFn } from "@/fns/categories";
+import { fetchSiteSettingsFn } from "@/fns/settings";
 import { ProductCard } from "@/components/ProductCard";
 import { Button } from "@/components/ui/button";
 
 export const Route = createFileRoute("/")({ component: Home });
 
+const DEFAULT_HERO_IMAGE = "https://www.ellymodasonline.com.br/arquivos/PRODUTOS/7511713811406625171/7511713811406625171_G_1.jpg";
+
 function Home() {
   const { data: featured = [] } = useQuery({
     queryKey: ["products", "featured"],
     queryFn: () => fetchFeaturedProductsFn(),
+  });
+
+  const { data: settings } = useQuery({
+    queryKey: ["site-settings"],
+    queryFn: () => fetchSiteSettingsFn(),
   });
 
   const { data: categories = [] } = useQuery({
@@ -50,7 +59,7 @@ function Home() {
           </div>
           <div className="relative aspect-[4/5] overflow-hidden rounded-3xl shadow-elegant md:aspect-square">
             <img
-              src="https://www.ellymodasonline.com.br/arquivos/PRODUTOS/7511713811406625171/7511713811406625171_G_1.jpg"
+              src={settings?.hero_image_url || DEFAULT_HERO_IMAGE}
               alt="Coleção em destaque"
               className="h-full w-full object-cover"
             />
@@ -64,9 +73,10 @@ function Home() {
 
       {/* Trust strip */}
       <section className="border-y border-border/60 bg-card">
-        <div className="container-page grid grid-cols-2 gap-8 py-8 text-sm md:grid-cols-4">
+        <div className="container-page grid grid-cols-2 gap-8 py-8 text-sm md:grid-cols-5">
           {[
             { icon: Truck, t: "Frete grátis", d: "acima de R$ 199" },
+            { icon: CreditCard, t: `Em até ${MAX_INSTALLMENTS}x`, d: "sem juros no cartão" },
             { icon: ShieldCheck, t: "Pagamento seguro", d: "compra protegida" },
             { icon: RefreshCw, t: "Trocas em 30 dias", d: "fácil e rápido" },
             { icon: Sparkles, t: "Curadoria premium", d: "qualidade garantida" },
@@ -95,6 +105,7 @@ function Home() {
             <Link
               key={c.id}
               to="/shop"
+              search={{ category: c.slug }}
               className="group relative aspect-[4/5] overflow-hidden rounded-2xl shadow-card"
             >
               {c.image_url && (

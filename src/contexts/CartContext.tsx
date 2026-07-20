@@ -8,13 +8,19 @@ export type CartItem = {
   quantity: number;
   slug: string;
   weight_kg?: number | null;
+  size?: string | null;
 };
+
+// Roupas com tamanhos diferentes são linhas distintas no carrinho — o mesmo produto em
+// P e em M não pode virar uma única linha com quantidade somada.
+const sameLine = (a: { id: string; size?: string | null }, b: { id: string; size?: string | null }) =>
+  a.id === b.id && (a.size ?? null) === (b.size ?? null);
 
 type Ctx = {
   items: CartItem[];
   add: (i: Omit<CartItem, "quantity">, qty?: number) => void;
-  remove: (id: string) => void;
-  setQty: (id: string, qty: number) => void;
+  remove: (id: string, size?: string | null) => void;
+  setQty: (id: string, qty: number, size?: string | null) => void;
   clear: () => void;
   subtotal: number;
   count: number;
@@ -41,13 +47,13 @@ export function CartProvider({ children }: { children: ReactNode }) {
     items,
     add: (i, qty = 1) =>
       setItems((cur) => {
-        const ex = cur.find((c) => c.id === i.id);
-        if (ex) return cur.map((c) => (c.id === i.id ? { ...c, quantity: c.quantity + qty } : c));
+        const ex = cur.find((c) => sameLine(c, i));
+        if (ex) return cur.map((c) => (sameLine(c, i) ? { ...c, quantity: c.quantity + qty } : c));
         return [...cur, { ...i, quantity: qty }];
       }),
-    remove: (id) => setItems((cur) => cur.filter((c) => c.id !== id)),
-    setQty: (id, qty) =>
-      setItems((cur) => cur.map((c) => (c.id === id ? { ...c, quantity: Math.max(1, qty) } : c))),
+    remove: (id, size) => setItems((cur) => cur.filter((c) => !sameLine(c, { id, size }))),
+    setQty: (id, qty, size) =>
+      setItems((cur) => cur.map((c) => (sameLine(c, { id, size }) ? { ...c, quantity: Math.max(1, qty) } : c))),
     clear: () => setItems([]),
     subtotal: items.reduce((s, i) => s + i.price * i.quantity, 0),
     count: items.reduce((s, i) => s + i.quantity, 0),

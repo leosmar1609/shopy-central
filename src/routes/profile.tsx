@@ -1036,7 +1036,8 @@ function OrdersSection() {
                                   className="h-10 w-10 rounded-lg object-cover"
                                 />
                               )}
-                              {item.product_name} × {item.quantity}
+                              {item.product_name}
+                              {item.size ? ` (${item.size})` : ""} × {item.quantity}
                             </span>
                             <span>{formatBRL(Number(item.unit_price))}</span>
                           </li>
@@ -1112,7 +1113,10 @@ function FavoritesSection() {
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {favorites.map((product) => {
-            const finalPrice = product.on_sale && product.sale_price ? product.sale_price : product.price;
+            const finalPrice =
+              Number(product.sale_price) > 0 && Number(product.sale_price) < Number(product.price)
+                ? product.sale_price
+                : product.price;
             return (
               <div key={product.id} className="flex gap-4 rounded-2xl border border-border p-4">
                 <Link

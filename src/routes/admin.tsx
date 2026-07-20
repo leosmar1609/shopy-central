@@ -1,6 +1,6 @@
 import { createFileRoute, Outlet, Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { LayoutDashboard, Package, Tag, ShoppingCart, Ticket, ArrowLeft, Menu } from "lucide-react";
+import { LayoutDashboard, Package, Tag, ShoppingCart, Ticket, ArrowLeft, Menu, Settings } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
@@ -13,6 +13,7 @@ const items = [
   { to: "/admin/categories", label: "Categorias", icon: Tag },
   { to: "/admin/orders", label: "Pedidos", icon: ShoppingCart },
   { to: "/admin/coupons", label: "Cupons", icon: Ticket },
+  { to: "/admin/settings", label: "Configurações", icon: Settings },
 ];
 
 function AdminNavLinks({ path, onNavigate }: { path: string; onNavigate?: () => void }) {

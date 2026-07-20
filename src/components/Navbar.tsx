@@ -89,7 +89,7 @@ export function Navbar() {
               ) : (
                 categories.map((c) => (
                   <DropdownMenuItem key={c.id} asChild>
-                    <Link to="/shop" search={toShopSearch({ category: c.id })}>{c.name}</Link>
+                    <Link to="/shop" search={toShopSearch({ category: c.slug })}>{c.name}</Link>
                   </DropdownMenuItem>
                 ))
               )}
@@ -235,7 +235,7 @@ export function Navbar() {
                       <Link
                         key={c.id}
                         to="/shop"
-                        search={toShopSearch({ category: c.id })}
+                        search={toShopSearch({ category: c.slug })}
                         onClick={() => setDrawerOpen(false)}
                         className="rounded-md px-2 py-2 text-foreground transition-colors hover:bg-accent/10"
                       >

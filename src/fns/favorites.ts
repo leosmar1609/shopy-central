@@ -1,4 +1,5 @@
 import { createServerFn } from '@tanstack/react-start';
+import { setResponseHeaders } from '@tanstack/react-start/server';
 import { db } from '@/lib/db';
 import { verifyToken } from '@/lib/jwt';
 
@@ -17,6 +18,7 @@ export const fetchMyFavoritesFn = createServerFn({ method: 'GET' })
   .inputValidator((data: { token: string }) => data)
   .handler(async ({ data }) => {
     const user = verifyToken(data.token);
+    setResponseHeaders({ 'Cache-Control': 'no-store' } as any);
     const [rows] = await db.execute(
       `SELECT p.id, p.name, p.slug, p.price, p.sale_price, p.on_sale, p.image_url, p.rating
        FROM favorites f

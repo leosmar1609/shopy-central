@@ -1,4 +1,5 @@
 import { createServerFn } from '@tanstack/react-start';
+import { setResponseHeaders } from '@tanstack/react-start/server';
 import { randomUUID } from 'crypto';
 import { db } from '@/lib/db';
 import { verifyToken } from '@/lib/jwt';
@@ -62,6 +63,7 @@ export const validateCouponFn = createServerFn({ method: 'POST' })
 // Lista pública de cupons ativos e dentro da validade, para exibir como "promoções disponíveis"
 // (não expõe uses_count/max_uses, só o necessário para o cliente decidir se quer usar).
 export const fetchActiveCouponsFn = createServerFn({ method: 'GET' }).handler(async () => {
+  setResponseHeaders({ 'Cache-Control': 'no-store' } as any);
   const [rows] = await db.execute(
     `SELECT code, discount_type, discount_value, min_order_value FROM coupons
      WHERE active = 1
@@ -82,6 +84,9 @@ export const fetchAdminCouponsFn = createServerFn({ method: 'GET' })
   .inputValidator((data: { token: string }) => data)
   .handler(async ({ data }) => {
     assertAdmin(data.token);
+    // Sem isso, o refetch disparado logo após editar/excluir pode reaproveitar a resposta
+    // GET anterior (sem Cache-Control ela fica sujeita a cache do navegador) e mostrar a lista velha.
+    setResponseHeaders({ 'Cache-Control': 'no-store' } as any);
     const [rows] = await db.query('SELECT * FROM coupons ORDER BY created_at DESC');
     return rows as Coupon[];
   });

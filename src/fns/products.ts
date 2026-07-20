@@ -1,4 +1,5 @@
 import { createServerFn } from '@tanstack/react-start';
+import { setResponseHeaders } from '@tanstack/react-start/server';
 import { db } from '@/lib/db';
 import { verifyToken } from '@/lib/jwt';
 
@@ -7,11 +8,19 @@ const withCategory = (row: any) => ({
   categories: row.category_name ? { name: row.category_name } : null,
 });
 
+// Um preço promocional de 0 (ou negativo) não é uma promoção de verdade — sem essa
+// normalização na escrita, qualquer caminho que salve `sale_price: 0` acaba fazendo o
+// produto aparecer "grátis" pra quem compra.
+const normalizeSalePrice = (value: unknown): number | null => {
+  const n = Number(value);
+  return value != null && Number.isFinite(n) && n > 0 ? n : null;
+};
+
 // `weight_kg` é um dado interno de logística (usado só pra calcular o frete no
 // servidor) — nunca deve ir nas respostas voltadas ao cliente, nem no JSON bruto,
 // então as consultas públicas listam as colunas explicitamente em vez de usar `p.*`.
 const PUBLIC_PRODUCT_COLUMNS =
-  'p.id, p.name, p.slug, p.description, p.price, p.sale_price, p.stock, p.image_url, p.image_urls, p.category_id, p.featured, p.on_sale, p.rating, p.created_at, p.updated_at';
+  'p.id, p.name, p.slug, p.description, p.price, p.sale_price, p.stock, p.image_url, p.image_urls, p.category_id, p.featured, p.on_sale, p.is_clothing, p.rating, p.created_at, p.updated_at';
 
 export type ProductSortOption = 'relevance' | 'price_asc' | 'price_desc' | 'newest' | 'rating';
 
@@ -97,6 +106,7 @@ export const fetchProductsFn = createServerFn({ method: 'GET' })
     const orderBy = SORT_COLUMNS[data.sort ?? 'relevance'] ?? SORT_COLUMNS.relevance;
     const { from, where, params } = buildProductFilters(data);
 
+    setResponseHeaders({ 'Cache-Control': 'no-store' } as any);
     const [rows] = await db.query(
       `SELECT ${PUBLIC_PRODUCT_COLUMNS} FROM ${from} ${where} ORDER BY ${orderBy} LIMIT ? OFFSET ?`,
       [...params, pageSize, offset]
@@ -110,23 +120,32 @@ export const fetchProductsCountFn = createServerFn({ method: 'GET' })
   .inputValidator((data?: ProductFilters) => data ?? {})
   .handler(async ({ data }) => {
     const { from, where, params } = buildProductFilters(data);
+    setResponseHeaders({ 'Cache-Control': 'no-store' } as any);
     const [rows] = await db.query(`SELECT COUNT(*) AS total FROM ${from} ${where}`, params);
     return Number((rows as any[])[0]?.total ?? 0);
   });
 
 export const fetchFeaturedProductsFn = createServerFn({ method: 'GET' }).handler(async () => {
+  setResponseHeaders({ 'Cache-Control': 'no-store' } as any);
   const [rows] = await db.query(`SELECT ${PUBLIC_PRODUCT_COLUMNS} FROM products p WHERE p.featured = 1 LIMIT 8`);
   return rows as any[];
 });
 
 export const fetchSaleProductsFn = createServerFn({ method: 'GET' }).handler(async () => {
-  const [rows] = await db.query(`SELECT ${PUBLIC_PRODUCT_COLUMNS} FROM products p WHERE p.on_sale = 1 LIMIT 4`);
+  setResponseHeaders({ 'Cache-Control': 'no-store' } as any);
+  const [rows] = await db.query(
+    `SELECT ${PUBLIC_PRODUCT_COLUMNS} FROM products p
+     WHERE p.sale_price IS NOT NULL AND p.sale_price > 0 AND p.sale_price < p.price
+     LIMIT 4`
+  );
   return rows as any[];
 });
 
 export const fetchProductBySlugFn = createServerFn({ method: 'GET' })
   .inputValidator((data: { slug: string }) => data)
   .handler(async ({ data }) => {
+    // See comment in fns/reviews.ts about this cast — the bundled type for setResponseHeaders is wrong.
+    setResponseHeaders({ 'Cache-Control': 'no-store' } as any);
     const [rows] = await db.query(
       `SELECT ${PUBLIC_PRODUCT_COLUMNS}, c.name AS category_name FROM products p LEFT JOIN categories c ON p.category_id = c.id WHERE p.slug = ? LIMIT 1`,
       [data.slug]
@@ -139,6 +158,7 @@ export const fetchAdminProductsFn = createServerFn({ method: 'GET' })
   .inputValidator((data: { token: string }) => data)
   .handler(async ({ data }) => {
     verifyToken(data.token);
+    setResponseHeaders({ 'Cache-Control': 'no-store' } as any);
     const [rows] = await db.query(
       'SELECT p.*, c.name AS category_name FROM products p LEFT JOIN categories c ON p.category_id = c.id ORDER BY p.created_at DESC'
     );
@@ -151,21 +171,24 @@ export const createProductFn = createServerFn({ method: 'POST' })
     const u = verifyToken(data.token);
     if (!u.isAdmin) throw new Error('Acesso negado');
     const p = data.payload;
+    const salePrice = normalizeSalePrice(p.sale_price);
+    const onSale = salePrice != null && salePrice < Number(p.price) ? 1 : 0;
     await db.execute(
-      'INSERT INTO products (name, slug, description, price, sale_price, stock, image_url, image_urls, category_id, featured, on_sale, weight_kg) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      'INSERT INTO products (name, slug, description, price, sale_price, stock, image_url, image_urls, category_id, featured, on_sale, weight_kg, is_clothing) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       [
         p.name,
         p.slug,
         p.description ?? null,
         p.price,
-        p.sale_price ?? null,
+        salePrice,
         p.stock,
         p.image_url ?? null,
         p.image_urls && p.image_urls.length ? JSON.stringify(p.image_urls) : null,
         p.category_id ?? null,
         p.featured ? 1 : 0,
-        p.on_sale ? 1 : 0,
+        onSale,
         p.weight_kg ?? 0.3,
+        p.is_clothing ? 1 : 0,
       ]
     );
   });
@@ -176,21 +199,24 @@ export const updateProductFn = createServerFn({ method: 'POST' })
     const u = verifyToken(data.token);
     if (!u.isAdmin) throw new Error('Acesso negado');
     const p = data.payload;
+    const salePrice = normalizeSalePrice(p.sale_price);
+    const onSale = salePrice != null && salePrice < Number(p.price) ? 1 : 0;
     await db.execute(
-      'UPDATE products SET name=?, slug=?, description=?, price=?, sale_price=?, stock=?, image_url=?, image_urls=?, category_id=?, featured=?, on_sale=?, weight_kg=? WHERE id=?',
+      'UPDATE products SET name=?, slug=?, description=?, price=?, sale_price=?, stock=?, image_url=?, image_urls=?, category_id=?, featured=?, on_sale=?, weight_kg=?, is_clothing=? WHERE id=?',
       [
         p.name,
         p.slug,
         p.description ?? null,
         p.price,
-        p.sale_price ?? null,
+        salePrice,
         p.stock,
         p.image_url ?? null,
         p.image_urls && p.image_urls.length ? JSON.stringify(p.image_urls) : null,
         p.category_id ?? null,
         p.featured ? 1 : 0,
-        p.on_sale ? 1 : 0,
+        onSale,
         p.weight_kg ?? 0.3,
+        p.is_clothing ? 1 : 0,
         data.id,
       ]
     );

@@ -30,6 +30,8 @@ import {
 } from "@/lib/masks";
 import { fetchAddressByCep } from "@/lib/viacep";
 import { calculateShipping, estimateCartWeightKg } from "@/lib/shipping";
+import { calculateMaxInstallments } from "@/lib/installments";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 export const Route = createFileRoute("/checkout")({ component: Checkout });
 
@@ -87,6 +89,7 @@ function Checkout() {
   const navigate = useNavigate();
   const [submitting, setSubmitting] = useState(false);
   const [paymentType, setPaymentType] = useState<'card' | 'pix' | 'boleto'>('card');
+  const [installments, setInstallments] = useState(1);
   const [paymentResult, setPaymentResult] = useState<PaymentResult | null>(null);
   const [paymentConfirmed, setPaymentConfirmed] = useState(false);
   const [address, setAddress] = useState<AddressState>({
@@ -339,6 +342,11 @@ function Checkout() {
   const cepComplete = onlyDigits(address.zip).length === 8;
   const discount = appliedCoupon?.discount ?? 0;
   const total = Math.max(0, subtotal - discount + shipping);
+  const maxInstallments = calculateMaxInstallments(total);
+
+  useEffect(() => {
+    if (installments > maxInstallments) setInstallments(maxInstallments);
+  }, [maxInstallments, installments]);
 
   if (items.length === 0 && !paymentResult) {
     return (
@@ -548,6 +556,7 @@ function Checkout() {
               product_image: i.image_url,
               unit_price: i.price,
               quantity: i.quantity,
+              size: i.size,
             })),
             cpf,
             phone: v.phone,
@@ -557,6 +566,7 @@ function Checkout() {
             card_expiry_month: String(fd.get('card_exp_month') || ''),
             card_expiry_year: String(fd.get('card_exp_year') || ''),
             card_cvv: String(fd.get('card_cvv') || ''),
+            installments,
           },
         });
 
@@ -603,6 +613,7 @@ function Checkout() {
               product_image: i.image_url,
               unit_price: i.price,
               quantity: i.quantity,
+              size: i.size,
             })),
             cpf,
           },
@@ -889,6 +900,23 @@ function Checkout() {
                     />
                   </div>
                 </div>
+                {maxInstallments > 1 && (
+                  <div>
+                    <Label htmlFor="installments">Parcelas</Label>
+                    <Select value={String(installments)} onValueChange={(v) => setInstallments(Number(v))}>
+                      <SelectTrigger id="installments">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {Array.from({ length: maxInstallments }, (_, i) => i + 1).map((n) => (
+                          <SelectItem key={n} value={String(n)}>
+                            {n === 1 ? `À vista - ${formatBRL(total)}` : `${n}x de ${formatBRL(total / n)}`}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
                 <div>
                   <Label htmlFor="cpf_card">CPF do titular</Label>
                   <Input

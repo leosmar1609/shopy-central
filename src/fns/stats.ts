@@ -1,4 +1,5 @@
 import { createServerFn } from '@tanstack/react-start';
+import { setResponseHeaders } from '@tanstack/react-start/server';
 import { db } from '@/lib/db';
 import { verifyToken } from '@/lib/jwt';
 
@@ -7,6 +8,7 @@ export const fetchStatsFn = createServerFn({ method: 'GET' })
   .handler(async ({ data }) => {
     const u = verifyToken(data.token);
     if (!u.isAdmin) throw new Error('Acesso negado');
+    setResponseHeaders({ 'Cache-Control': 'no-store' } as any);
     const [[pc], [oc], [ic]] = await Promise.all([
       db.query('SELECT COUNT(*) AS count FROM products'),
       db.query('SELECT COALESCE(SUM(total), 0) AS revenue, COUNT(*) AS count FROM orders'),

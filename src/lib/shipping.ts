@@ -5,7 +5,7 @@
 // de verdade (Correios/Melhor Envio), essa função é o ponto único a trocar.
 
 const FREE_SHIPPING_THRESHOLD = 199;
-const ORIGIN_REGION_DIGIT = 0; // Rua Apeninos, 1126 — CEP 04104-021 (São Paulo capital)
+const ORIGIN_REGION_DIGIT = 0; // Origem dos envios: Correios de Itapevi/SP — CEP 06696-000
 
 type RegionTier = {
   baseRate: number;
@@ -15,17 +15,20 @@ type RegionTier = {
 
 // Uma "regra" por grupo de dígito inicial do CEP (padrão dos Correios: cada dígito
 // inicial cobre uma macrorregião do Brasil). Preços calibrados como referência PAC.
+// Prazos de 5 a 7 dias úteis — o produto chega primeiro na origem (dropshipping) antes
+// de ser despachado pra casa do cliente, então o prazo não pode ser tão curto quanto um
+// envio direto normal.
 const TIERS: Record<'near' | 'southeast_south' | 'central' | 'far', RegionTier> = {
-  near: { baseRate: 12.9, perExtraKg: 2.5, etaDays: 3 },
-  southeast_south: { baseRate: 17.9, perExtraKg: 3.5, etaDays: 5 },
+  near: { baseRate: 12.9, perExtraKg: 2.5, etaDays: 5 },
+  southeast_south: { baseRate: 17.9, perExtraKg: 3.5, etaDays: 6 },
   central: { baseRate: 22.9, perExtraKg: 4.5, etaDays: 7 },
-  far: { baseRate: 27.9, perExtraKg: 5.5, etaDays: 10 },
+  far: { baseRate: 27.9, perExtraKg: 5.5, etaDays: 7 },
 };
 
 // Mapeia o primeiro dígito do CEP de destino pra um "grupo" de distância a partir
-// da origem (São Paulo capital, dígito 0).
+// da origem (Itapevi/SP, dígito 0).
 function regionTierForDigit(digit: number): RegionTier {
-  if (digit === 0 || digit === 1) return TIERS.near; // SP capital/interior
+  if (digit === 0 || digit === 1) return TIERS.near; // Grande SP (inclui Itapevi)/interior de SP
   if (digit === 2 || digit === 3 || digit === 8) return TIERS.southeast_south; // RJ, ES, MG, PR, SC
   if (digit === 7 || digit === 9) return TIERS.central; // DF, GO, TO, MT, MS, RS
   return TIERS.far; // BA, SE, PE, AL, PB, RN, CE, PI, MA, PA, AM, AP, RR, AC, RO

@@ -10,7 +10,7 @@ const FAQS: { question: string; answer: React.ReactNode }[] = [
   },
   {
     question: "Qual o prazo de entrega dos pedidos?",
-    answer: "O prazo varia de acordo com a sua região, mas em média os pedidos chegam entre 5 e 12 dias úteis após a confirmação do pagamento. Você recebe o código de rastreio por e-mail assim que o pedido é despachado.",
+    answer: "O prazo varia de acordo com a sua região, mas em média os pedidos chegam entre 5 e 7 dias úteis após a confirmação do pagamento. Você recebe o código de rastreio por e-mail assim que o pedido é despachado.",
   },
   {
     question: "Como acompanho o status do meu pedido?",

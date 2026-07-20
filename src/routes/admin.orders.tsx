@@ -98,7 +98,9 @@ function AdminOrders() {
                   </div>
                 </div>
                 <div className="mb-3 text-sm text-muted-foreground">
-                  {(o.order_items as any[])?.map((i) => `${i.product_name} ×${i.quantity}`).join(", ")}
+                  {(o.order_items as any[])
+                    ?.map((i) => `${i.product_name}${i.size ? ` (${i.size})` : ""} ×${i.quantity}`)
+                    .join(", ")}
                 </div>
                 <TrackingForm order={o} onSave={saveTracking} />
               </div>

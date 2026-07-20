@@ -6,6 +6,7 @@ import { db } from '@/lib/db';
 import { verifyToken } from '@/lib/jwt';
 import { getEnv } from '@/lib/env';
 import { calculateShipping, estimateCartWeightKg } from '@/lib/shipping';
+import { calculateMaxInstallments } from '@/lib/installments';
 
 function getAsaasConfig(): { apiKey: string; baseUrl: string } {
   const rawKey = getEnv('ASAAS_API_KEY')?.trim();
@@ -46,6 +47,7 @@ type PaymentItem = {
   product_image?: string | null;
   unit_price: number;
   quantity: number;
+  size?: string | null;
 };
 
 function asaasRequest<T>(
@@ -232,7 +234,7 @@ async function insertOrderItems(
   items: PaymentItem[],
 ): Promise<void> {
   if (items.length === 0) return;
-  const placeholders = items.map(() => '(?, ?, ?, ?, ?, ?)').join(', ');
+  const placeholders = items.map(() => '(?, ?, ?, ?, ?, ?, ?)').join(', ');
   const params = items.flatMap((item) => [
     orderId,
     item.product_id,
@@ -240,9 +242,10 @@ async function insertOrderItems(
     item.product_image ?? null,
     item.unit_price,
     item.quantity,
+    item.size ?? null,
   ]);
   await conn.execute(
-    `INSERT INTO order_items (order_id, product_id, product_name, product_image, unit_price, quantity) VALUES ${placeholders}`,
+    `INSERT INTO order_items (order_id, product_id, product_name, product_image, unit_price, quantity, size) VALUES ${placeholders}`,
     params,
   );
 }
@@ -373,6 +376,7 @@ export const createAsaasChargeFn = createServerFn({ method: 'POST' })
       card_expiry_month: string;
       card_expiry_year: string;
       card_cvv: string;
+      installments?: number;
     }) => data,
   )
   .handler(async ({ data }) => {
@@ -408,12 +412,21 @@ export const createAsaasChargeFn = createServerFn({ method: 'POST' })
 
     const remoteIp = getRequestIP({ xForwardedFor: true }) ?? '127.0.0.1';
 
+    // Nunca confia no número de parcelas que vem do cliente — recalcula o máximo permitido
+    // a partir do total autoritativo (já com frete recomputado) e trava o valor nesse limite.
+    const maxInstallments = calculateMaxInstallments(Number(order.total));
+    const installments = Math.min(Math.max(1, Math.round(Number(data.installments) || 1)), maxInstallments);
+    const installmentFields =
+      installments > 1
+        ? { installmentCount: installments, totalValue: Number(order.total) }
+        : { value: Number(order.total) };
+
     type AsaasPaymentResponse = { id: string; status: string };
 
     const payment = await asaasRequest<AsaasPaymentResponse>('POST', '/payments', apiKey, baseUrl, {
       customer: customerId,
       billingType: 'CREDIT_CARD',
-      value: Number(order.total),
+      ...installmentFields,
       dueDate: formatDueDate(0),
       description: `Pedido #${orderId}`,
       externalReference: orderId ?? '',

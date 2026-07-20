@@ -19,6 +19,7 @@ function slugify(s: string) {
 function AdminCategories() {
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
+  const [imageUrl, setImageUrl] = useState("");
   const token = () => getStoredToken() ?? "";
 
   const { data: cats = [] } = useQuery({
@@ -36,6 +37,7 @@ function AdminCategories() {
       qc.invalidateQueries({ queryKey: ["admin", "categories"] });
       qc.invalidateQueries({ queryKey: ["categories"] });
       setOpen(false);
+      setImageUrl("");
     } catch (err: any) {
       toast.error(err.message ?? "Erro ao criar");
     }
@@ -62,7 +64,30 @@ function AdminCategories() {
             <DialogHeader><DialogTitle>Nova categoria</DialogTitle></DialogHeader>
             <form onSubmit={add} className="space-y-4">
               <div><Label>Nome</Label><Input name="name" required /></div>
-              <div><Label>URL da imagem</Label><Input name="image_url" /></div>
+              <div>
+                <Label>URL da imagem</Label>
+                <Input name="image_url" value={imageUrl} onChange={(e) => setImageUrl(e.target.value)} />
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Use o link direto do arquivo de imagem (termina em .jpg/.png/.webp), não um link de compartilhamento de página.
+                </p>
+              </div>
+              {imageUrl && (
+                <div className="aspect-video w-full overflow-hidden rounded-xl bg-muted">
+                  <img
+                    src={imageUrl}
+                    alt="Pré-visualização"
+                    className="h-full w-full object-cover"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).style.display = "none";
+                      const warning = (e.target as HTMLImageElement).nextElementSibling as HTMLElement | null;
+                      if (warning) warning.style.display = "block";
+                    }}
+                  />
+                  <p className="hidden p-3 text-xs text-destructive">
+                    Essa URL não carregou como imagem — confira se é o link direto do arquivo.
+                  </p>
+                </div>
+              )}
               <Button type="submit" className="w-full">Salvar</Button>
             </form>
           </DialogContent>

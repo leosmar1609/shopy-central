@@ -1,4 +1,5 @@
 import { createServerFn } from '@tanstack/react-start';
+import { setResponseHeaders } from '@tanstack/react-start/server';
 import { randomUUID } from 'crypto';
 import { db } from '@/lib/db';
 import { verifyToken } from '@/lib/jwt';
@@ -40,6 +41,7 @@ export const fetchMyAddressesFn = createServerFn({ method: 'GET' })
   .inputValidator((data: { token: string }) => data)
   .handler(async ({ data }) => {
     const user = verifyToken(data.token);
+    setResponseHeaders({ 'Cache-Control': 'no-store' } as any);
     const [rows] = await db.execute(
       'SELECT * FROM addresses WHERE user_id = ? ORDER BY is_default DESC, created_at DESC',
       [user.id],

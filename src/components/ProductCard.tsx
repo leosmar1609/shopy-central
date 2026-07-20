@@ -17,12 +17,14 @@ export type ProductCardProps = {
   on_sale: boolean;
   rating: number | string | null | undefined;
   weight_kg?: number | string | null;
+  is_clothing?: boolean | number;
 };
 
 export function ProductCard(p: ProductCardProps) {
   const { add } = useCart();
   const { has, toggle } = useWishlist();
-  const finalPrice = p.on_sale && p.sale_price ? p.sale_price : p.price;
+  const hasSalePrice = Number(p.sale_price) > 0 && Number(p.sale_price) < Number(p.price);
+  const finalPrice = hasSalePrice ? p.sale_price! : p.price;
   const rating = Number(p.rating ?? 0) || 0;
   const imageUrl = (Array.isArray(p.image_urls) && p.image_urls[0]) || p.image_url;
   const isFavorite = has(p.id);
@@ -38,7 +40,7 @@ export function ProductCard(p: ProductCardProps) {
             className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105"
           />
         )}
-        {p.on_sale && p.sale_price && (
+        {hasSalePrice && (
           <span className="absolute left-3 top-3 rounded-full bg-sale px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-sale-foreground">
             Oferta
           </span>
@@ -67,22 +69,30 @@ export function ProductCard(p: ProductCardProps) {
         </Link>
         <div className="mt-auto flex items-end justify-between gap-2">
           <div>
-            {p.on_sale && p.sale_price && (
+            {hasSalePrice && (
               <div className="text-xs text-muted-foreground line-through">{formatBRL(p.price)}</div>
             )}
             <div className="text-lg font-semibold">{formatBRL(finalPrice)}</div>
           </div>
-          <Button
-            size="icon"
-            variant="default"
-            onClick={() => {
-              add({ id: p.id, name: p.name, price: finalPrice, image_url: p.image_url, slug: p.slug, weight_kg: Number(p.weight_kg) || undefined });
-              toast.success("Adicionado ao carrinho");
-            }}
-            aria-label="Adicionar ao carrinho"
-          >
-            <ShoppingBag className="h-4 w-4" />
-          </Button>
+          {Boolean(p.is_clothing) ? (
+            <Button size="icon" variant="default" asChild aria-label="Escolher tamanho">
+              <Link to="/product/$slug" params={{ slug: p.slug }}>
+                <ShoppingBag className="h-4 w-4" />
+              </Link>
+            </Button>
+          ) : (
+            <Button
+              size="icon"
+              variant="default"
+              onClick={() => {
+                add({ id: p.id, name: p.name, price: finalPrice, image_url: p.image_url, slug: p.slug, weight_kg: Number(p.weight_kg) || undefined });
+                toast.success("Adicionado ao carrinho");
+              }}
+              aria-label="Adicionar ao carrinho"
+            >
+              <ShoppingBag className="h-4 w-4" />
+            </Button>
+          )}
         </div>
       </div>
     </article>

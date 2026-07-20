@@ -105,19 +105,20 @@ function Cart() {
       <div className="grid gap-10 lg:grid-cols-[1fr_380px]">
         <ul className="space-y-4">
           {items.map((it) => (
-            <li key={it.id} className="flex gap-4 rounded-2xl bg-card p-4 shadow-card">
+            <li key={`${it.id}-${it.size ?? ""}`} className="flex gap-4 rounded-2xl bg-card p-4 shadow-card">
               <div className="h-24 w-24 overflow-hidden rounded-xl bg-muted">
                 {it.image_url && <img src={it.image_url} alt={it.name} className="h-full w-full object-cover" />}
               </div>
               <div className="flex flex-1 flex-col">
                 <Link to="/product/$slug" params={{ slug: it.slug }} className="font-medium hover:text-accent">{it.name}</Link>
+                {it.size && <div className="text-xs text-muted-foreground">Tamanho: {it.size}</div>}
                 <div className="mt-1 text-sm text-muted-foreground">{formatBRL(it.price)}</div>
                 <div className="mt-auto flex items-center justify-between">
                   <div className="flex items-center rounded-full border border-input">
                     <button
                       className="px-2 py-1"
                       aria-label="Diminuir quantidade"
-                      onClick={() => setQty(it.id, it.quantity - 1)}
+                      onClick={() => setQty(it.id, it.quantity - 1, it.size)}
                     >
                       <Minus className="h-3 w-3" />
                     </button>
@@ -125,13 +126,13 @@ function Cart() {
                     <button
                       className="px-2 py-1"
                       aria-label="Aumentar quantidade"
-                      onClick={() => setQty(it.id, it.quantity + 1)}
+                      onClick={() => setQty(it.id, it.quantity + 1, it.size)}
                     >
                       <Plus className="h-3 w-3" />
                     </button>
                   </div>
                   <button
-                    onClick={() => remove(it.id)}
+                    onClick={() => remove(it.id, it.size)}
                     aria-label="Remover item do carrinho"
                     className="text-muted-foreground hover:text-destructive"
                   >

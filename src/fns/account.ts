@@ -1,5 +1,5 @@
 import { createServerFn } from '@tanstack/react-start';
-import { getRequestIP } from '@tanstack/react-start/server';
+import { getRequestIP, setResponseHeaders } from '@tanstack/react-start/server';
 import bcrypt from 'bcryptjs';
 import { randomBytes } from 'crypto';
 import { db } from '@/lib/db';
@@ -14,6 +14,7 @@ export const fetchMyProfileFn = createServerFn({ method: 'GET' })
   .inputValidator((data: { token: string }) => data)
   .handler(async ({ data }) => {
     const user = verifyToken(data.token);
+    setResponseHeaders({ 'Cache-Control': 'no-store' } as any);
     const [profileRows] = await db.execute('SELECT phone FROM profiles WHERE id = ?', [user.id]);
     const profile = (profileRows as any[])[0];
     const [userRows] = await db.execute('SELECT cpf FROM users WHERE id = ?', [user.id]);
